@@ -36,11 +36,11 @@ export default function StorePage() {
     }
 
     try {
-      await blink.db.userProfiles.update(user.id, {
+      await blink.db.table('user_profiles').update(user.id, {
         balance: profile.balance - item.price,
       });
 
-      await blink.db.transactions.create({
+      await blink.db.table('transactions').create({
         userId: user.id,
         amount: -item.price,
         type: 'spend',

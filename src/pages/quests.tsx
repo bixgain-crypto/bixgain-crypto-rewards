@@ -33,7 +33,7 @@ export default function QuestsPage() {
       try {
         const [taskList, userTasks] = await Promise.all([
           fetchSharedData('tasks'),
-          user ? blink.db.userTasks.list({ where: { userId: user.id, status: 'completed' } }) : Promise.resolve([]),
+          user ? blink.db.table('user_tasks').list({ where: { userId: user.id, status: 'completed' } }) : Promise.resolve([]),
         ]);
         setTasks(taskList);
         setCompletedTaskIds(new Set(userTasks.map((ut: any) => ut.taskId)));

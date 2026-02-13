@@ -43,14 +43,14 @@ async function handler(req: Request): Promise<Response> {
       options.orderBy = { balance: "desc" };
       if (!limitParam) options.limit = 50;
     }
-    // For referral_history, sort by created_at descending
+    // For referral_history, sort by createdAt descending
     if (table === "referral_history") {
-      options.orderBy = { created_at: "desc" };
+      options.orderBy = { createdAt: "desc" };
       if (!limitParam) options.limit = 20;
     }
     // Only show active tasks
     if (table === "tasks") {
-      options.where = { is_active: 1 };
+      options.where = { isActive: 1 };
     }
 
     const data = await blink.db.table(table).list(options);

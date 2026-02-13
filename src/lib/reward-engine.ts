@@ -1,6 +1,6 @@
 import { blink } from './blink';
 
-const REWARD_ENGINE_URL = 'https://gh9qbc8y--reward-engine.functions.blink.new';
+const REWARD_ENGINE_URL = 'https://x79bsxgw--bix-reward-engine.functions.blink.new';
 
 async function callRewardEngine(action: string, data: Record<string, unknown> = {}) {
   const token = await blink.auth.getValidToken();

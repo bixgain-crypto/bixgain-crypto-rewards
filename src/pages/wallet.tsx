@@ -13,7 +13,7 @@ export default function WalletPage() {
   useEffect(() => {
     const fetchTransactions = async () => {
       if (profile?.userId) {
-        const history = await blink.db.transactions.list({
+        const history = await blink.db.table('transactions').list({
           where: { userId: profile.userId },
           orderBy: { createdAt: 'desc' },
           limit: 10,

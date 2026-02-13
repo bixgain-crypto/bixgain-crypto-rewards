@@ -20,7 +20,7 @@ export default function ReferralsPage() {
       if (!user) return;
       try {
         // Use user's own referral history (RLS filters to their records)
-        const history = await blink.db.referralHistory.list({
+        const history = await blink.db.table('referral_history').list({
           where: { referrerId: user.id },
           orderBy: { createdAt: 'desc' },
           limit: 20,

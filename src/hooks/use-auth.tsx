@@ -47,7 +47,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const fetchProfile = async (blinkUser: BlinkUser) => {
     try {
-      const profiles = await blink.db.userProfiles.list({ where: { userId: blinkUser.id }, limit: 1 });
+      const profiles = await blink.db.table('user_profiles').list({ where: { userId: blinkUser.id }, limit: 1 });
       const existingProfile = profiles.length > 0 ? profiles[0] : null;
 
       if (existingProfile) {
@@ -61,7 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               await rewardEngine.processReferral(pendingRef);
               clearPendingReferral();
               // Re-fetch profile to get updated balance
-              const updated = await blink.db.userProfiles.list({ where: { userId: blinkUser.id }, limit: 1 });
+              const updated = await blink.db.table('user_profiles').list({ where: { userId: blinkUser.id }, limit: 1 });
               if (updated.length > 0) setProfile(updated[0]);
             } catch {
               // Referral may fail if invalid code, already referred, etc. — silently continue
@@ -72,7 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         // Create profile for new user
         const referralCode = `BIX-${blinkUser.id.slice(-6).toUpperCase()}`;
-        const newProfile = await blink.db.userProfiles.create({
+        const newProfile = await blink.db.table('user_profiles').create({
           id: blinkUser.id,
           userId: blinkUser.id,
           displayName: blinkUser.displayName || 'Miner',
@@ -82,7 +82,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           xp: 0,
         });
 
-        await blink.db.transactions.create({
+        await blink.db.table('transactions').create({
           userId: blinkUser.id,
           amount: 100,
           type: 'signup',
@@ -98,7 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             await rewardEngine.processReferral(pendingRef);
             clearPendingReferral();
             // Re-fetch to get updated balance
-            const updated = await blink.db.userProfiles.list({ where: { userId: blinkUser.id }, limit: 1 });
+            const updated = await blink.db.table('user_profiles').list({ where: { userId: blinkUser.id }, limit: 1 });
             if (updated.length > 0) setProfile(updated[0]);
           } catch {
             clearPendingReferral();
@@ -141,7 +141,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshProfile = async () => {
     if (user) {
-      const profiles = await blink.db.userProfiles.list({ where: { userId: user.id }, limit: 1 });
+      const profiles = await blink.db.table('user_profiles').list({ where: { userId: user.id }, limit: 1 });
       if (profiles.length > 0) setProfile(profiles[0]);
     }
   };

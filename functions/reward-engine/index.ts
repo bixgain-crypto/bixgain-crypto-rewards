@@ -103,7 +103,7 @@ async function processReferral(blink: any, newUserId: string, body: any) {
 
   // Find referrer by referral code
   const referrers = await blink.db.table("user_profiles").list({
-    where: { referral_code: referralCode },
+    where: { referralCode: referralCode },
     limit: 1,
   });
 
@@ -114,22 +114,22 @@ async function processReferral(blink: any, newUserId: string, body: any) {
   const referrer = referrers[0];
 
   // Prevent self-referral
-  if (referrer.user_id === newUserId) {
+  if (referrer.userId === newUserId) {
     return errorResponse("Cannot refer yourself");
   }
 
   // Check if user was already referred
   const newUserProfiles = await blink.db.table("user_profiles").list({
-    where: { user_id: newUserId },
+    where: { userId: newUserId },
     limit: 1,
   });
-  if (newUserProfiles.length > 0 && newUserProfiles[0].referred_by) {
+  if (newUserProfiles.length > 0 && newUserProfiles[0].referredBy) {
     return errorResponse("User already has a referrer");
   }
 
   // Check duplicate referral entry
   const existingReferral = await blink.db.table("referral_history").list({
-    where: { referred_id: newUserId },
+    where: { referredId: newUserId },
     limit: 1,
   });
   if (existingReferral.length > 0) {
@@ -138,13 +138,13 @@ async function processReferral(blink: any, newUserId: string, body: any) {
 
   // Anti-fraud: cap referrals per hour for referrer
   const recentReferrals = await blink.db.table("referral_history").list({
-    where: { referrer_id: referrer.user_id },
+    where: { referrerId: referrer.userId },
     limit: 50,
   });
   // Simple check: max 10 referrals per day
   const today = new Date().toISOString().split("T")[0];
   const todayReferrals = recentReferrals.filter(
-    (r: any) => r.created_at && r.created_at.startsWith(today)
+    (r: any) => r.createdAt && r.createdAt.startsWith(today)
   );
   if (todayReferrals.length >= 10) {
     return errorResponse("Referrer daily limit reached");
@@ -157,21 +157,21 @@ async function processReferral(blink: any, newUserId: string, body: any) {
   try {
     // 1. Create referral history entry
     await blink.db.table("referral_history").create({
-      referrer_id: referrer.user_id,
-      referred_id: newUserId,
-      reward_amount: REFERRER_REWARD,
+      referrerId: referrer.userId,
+      referredId: newUserId,
+      rewardAmount: REFERRER_REWARD,
     });
 
     // 2. Update referrer balance
-    await blink.db.table("user_profiles").update(referrer.user_id, {
+    await blink.db.table("user_profiles").update(referrer.userId, {
       balance: (referrer.balance || 0) + REFERRER_REWARD,
-      total_earned: (referrer.total_earned || 0) + REFERRER_REWARD,
+      totalEarned: (referrer.totalEarned || 0) + REFERRER_REWARD,
       xp: (referrer.xp || 0) + 50,
     });
 
     // 3. Log referrer transaction
     await blink.db.table("transactions").create({
-      user_id: referrer.user_id,
+      userId: referrer.userId,
       amount: REFERRER_REWARD,
       type: "referral",
       description: `Referral bonus: new user joined`,
@@ -181,16 +181,16 @@ async function processReferral(blink: any, newUserId: string, body: any) {
     if (newUserProfiles.length > 0) {
       const newProfile = newUserProfiles[0];
       await blink.db.table("user_profiles").update(newUserId, {
-        referred_by: referrer.user_id,
+        referredBy: referrer.userId,
         balance: (newProfile.balance || 0) + NEW_USER_REWARD,
-        total_earned: (newProfile.total_earned || 0) + NEW_USER_REWARD,
+        totalEarned: (newProfile.totalEarned || 0) + NEW_USER_REWARD,
         xp: (newProfile.xp || 0) + 25,
       });
     }
 
     // 5. Log new user transaction
     await blink.db.table("transactions").create({
-      user_id: newUserId,
+      userId: newUserId,
       amount: NEW_USER_REWARD,
       type: "referral",
       description: `Referral bonus: joined via ${referralCode}`,
@@ -198,11 +198,11 @@ async function processReferral(blink: any, newUserId: string, body: any) {
 
     // 6. Log to reward_logs for audit
     await blink.db.table("reward_logs").create({
-      user_id: newUserId,
-      reward_type: "referral",
-      reward_amount: NEW_USER_REWARD,
-      source_id: referrer.user_id,
-      source_type: "referral_signup",
+      userId: newUserId,
+      rewardType: "referral",
+      rewardAmount: NEW_USER_REWARD,
+      sourceId: referrer.userId,
+      sourceType: "referral_signup",
     });
 
     return jsonResponse({
@@ -231,35 +231,35 @@ async function completeTask(blink: any, userId: string, body: any) {
   if (tasks.length === 0) return errorResponse("Task not found");
 
   const task = tasks[0];
-  if (!task.is_active) return errorResponse("Task is no longer active");
+  if (!task.isActive) return errorResponse("Task is no longer active");
 
   // Check user level requirement
   const profiles = await blink.db.table("user_profiles").list({
-    where: { user_id: userId },
+    where: { userId: userId },
     limit: 1,
   });
   if (profiles.length === 0) return errorResponse("Profile not found");
   const profile = profiles[0];
 
-  const userLevel = Math.floor((profile.total_earned || 0) / 500) + 1;
-  if (task.required_level && userLevel < task.required_level) {
-    return errorResponse(`Requires Level ${task.required_level}`);
+  const userLevel = Math.floor((profile.totalEarned || 0) / 500) + 1;
+  if (task.requiredLevel && userLevel < task.requiredLevel) {
+    return errorResponse(`Requires Level ${task.requiredLevel}`);
   }
 
   // Check completion based on task_type
   const existingCompletions = await blink.db.table("user_tasks").list({
-    where: { user_id: userId, task_id: taskId },
+    where: { userId: userId, taskId: taskId },
     limit: 10,
   });
 
-  if (task.task_type === "one_time" && existingCompletions.length > 0) {
+  if (task.taskType === "one_time" && existingCompletions.length > 0) {
     return errorResponse("Task already completed");
   }
 
-  if (task.task_type === "daily") {
+  if (task.taskType === "daily") {
     const today = new Date().toISOString().split("T")[0];
     const completedToday = existingCompletions.some(
-      (c: any) => c.completed_at && c.completed_at.startsWith(today)
+      (c: any) => c.completedAt && c.completedAt.startsWith(today)
     );
     if (completedToday) {
       return errorResponse("Daily task already completed today");
@@ -269,7 +269,7 @@ async function completeTask(blink: any, userId: string, body: any) {
   // Milestone tasks: validate eligibility
   if (task.category === "referral") {
     const referralCount = await blink.db.table("referral_history").count({
-      where: { referrer_id: userId },
+      where: { referrerId: userId },
     });
     const requiredCount = taskId === "task_refer_1" ? 1 : taskId === "task_refer_5" ? 5 : 25;
     if (referralCount < requiredCount) {
@@ -278,48 +278,48 @@ async function completeTask(blink: any, userId: string, body: any) {
   }
 
   if (task.category === "milestone") {
-    if (taskId === "task_earn_1000" && (profile.total_earned || 0) < 1000) {
+    if (taskId === "task_earn_1000" && (profile.totalEarned || 0) < 1000) {
       return errorResponse("Need 1,000 BIX total earnings");
     }
-    if (taskId === "task_earn_10000" && (profile.total_earned || 0) < 10000) {
+    if (taskId === "task_earn_10000" && (profile.totalEarned || 0) < 10000) {
       return errorResponse("Need 10,000 BIX total earnings");
     }
-    if (taskId === "task_streak_7" && (profile.daily_streak || 0) < 7) {
+    if (taskId === "task_streak_7" && (profile.dailyStreak || 0) < 7) {
       return errorResponse("Need 7-day login streak");
     }
   }
 
-  const reward = task.reward_amount || 0;
-  const xpReward = task.xp_reward || 0;
+  const reward = task.rewardAmount || 0;
+  const xpReward = task.xpReward || 0;
 
   // Execute reward
   try {
     await blink.db.table("user_tasks").create({
-      user_id: userId,
-      task_id: taskId,
+      userId: userId,
+      taskId: taskId,
       status: "completed",
-      completed_at: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
     });
 
     await blink.db.table("user_profiles").update(userId, {
       balance: (profile.balance || 0) + reward,
-      total_earned: (profile.total_earned || 0) + reward,
+      totalEarned: (profile.totalEarned || 0) + reward,
       xp: (profile.xp || 0) + xpReward,
     });
 
     await blink.db.table("transactions").create({
-      user_id: userId,
+      userId: userId,
       amount: reward,
       type: "task",
       description: `Completed: ${task.title}`,
     });
 
     await blink.db.table("reward_logs").create({
-      user_id: userId,
-      reward_type: "task",
-      reward_amount: reward,
-      source_id: taskId,
-      source_type: task.category,
+      userId: userId,
+      rewardType: "task",
+      rewardAmount: reward,
+      sourceId: taskId,
+      sourceType: task.category,
     });
 
     return jsonResponse({
@@ -339,7 +339,7 @@ async function completeTask(blink: any, userId: string, body: any) {
 
 async function dailyCheckin(blink: any, userId: string) {
   const profiles = await blink.db.table("user_profiles").list({
-    where: { user_id: userId },
+    where: { userId: userId },
     limit: 1,
   });
   if (profiles.length === 0) return errorResponse("Profile not found");
@@ -347,7 +347,7 @@ async function dailyCheckin(blink: any, userId: string) {
   const profile = profiles[0];
   const today = new Date().toISOString().split("T")[0];
 
-  if (profile.last_login === today) {
+  if (profile.lastLogin === today) {
     return errorResponse("Already checked in today");
   }
 
@@ -357,8 +357,8 @@ async function dailyCheckin(blink: any, userId: string) {
   const yesterdayStr = yesterday.toISOString().split("T")[0];
 
   let newStreak = 1;
-  if (profile.last_login === yesterdayStr) {
-    newStreak = (profile.daily_streak || 0) + 1;
+  if (profile.lastLogin === yesterdayStr) {
+    newStreak = (profile.dailyStreak || 0) + 1;
   }
 
   // Streak multiplier: 1x base, +0.5x per streak day (capped at 5x)
@@ -370,14 +370,14 @@ async function dailyCheckin(blink: any, userId: string) {
   try {
     await blink.db.table("user_profiles").update(userId, {
       balance: (profile.balance || 0) + reward,
-      total_earned: (profile.total_earned || 0) + reward,
-      last_login: today,
-      daily_streak: newStreak,
+      totalEarned: (profile.totalEarned || 0) + reward,
+      lastLogin: today,
+      dailyStreak: newStreak,
       xp: (profile.xp || 0) + xpReward,
     });
 
     await blink.db.table("transactions").create({
-      user_id: userId,
+      userId: userId,
       amount: reward,
       type: "daily",
       description: `Daily check-in (${newStreak}-day streak, ${multiplier}x multiplier)`,
@@ -410,13 +410,13 @@ async function startQuiz(blink: any, userId: string, body: any) {
 
   // Check for existing active session
   const activeSessions = await blink.db.table("quiz_sessions").list({
-    where: { user_id: userId, status: "active" },
+    where: { userId: userId, status: "active" },
     limit: 1,
   });
   if (activeSessions.length > 0) {
     // Expire stale sessions (older than 30 min)
     const session = activeSessions[0];
-    const startedAt = new Date(session.started_at).getTime();
+    const startedAt = new Date(session.startedAt).getTime();
     if (Date.now() - startedAt > 30 * 60 * 1000) {
       await blink.db.table("quiz_sessions").update(session.id, { status: "expired" });
     } else {
@@ -444,11 +444,11 @@ async function startQuiz(blink: any, userId: string, body: any) {
     const sessionId = `qs_${userId.slice(-6)}_${Date.now()}`;
     await blink.db.table("quiz_sessions").create({
       id: sessionId,
-      user_id: userId,
-      question_count: questionCount,
+      userId: userId,
+      questionCount: questionCount,
       difficulty: "mixed",
-      question_ids: JSON.stringify(questionIds),
-      answered_ids: "[]",
+      questionIds: JSON.stringify(questionIds),
+      answeredIds: "[]",
       status: "active",
     });
 
@@ -459,7 +459,7 @@ async function startQuiz(blink: any, userId: string, body: any) {
         id: q.id,
         question: q.question,
         options: q.options,
-        rewardAmount: q.reward_amount,
+        rewardAmount: q.rewardAmount,
         difficulty: q.difficulty,
       })),
       totalQuestions: questionCount,
@@ -474,11 +474,11 @@ async function startQuiz(blink: any, userId: string, body: any) {
   const sessionId = `qs_${userId.slice(-6)}_${Date.now()}`;
   await blink.db.table("quiz_sessions").create({
     id: sessionId,
-    user_id: userId,
-    question_count: questionCount,
+    userId: userId,
+    questionCount: questionCount,
     difficulty,
-    question_ids: JSON.stringify(questionIds),
-    answered_ids: "[]",
+    questionIds: JSON.stringify(questionIds),
+    answeredIds: "[]",
     status: "active",
   });
 
@@ -489,7 +489,7 @@ async function startQuiz(blink: any, userId: string, body: any) {
       id: q.id,
       question: q.question,
       options: q.options,
-      rewardAmount: q.reward_amount,
+      rewardAmount: q.rewardAmount,
       difficulty: q.difficulty,
     })),
     totalQuestions: questionCount,
@@ -503,21 +503,21 @@ async function quizAnswer(blink: any, userId: string, body: any) {
     return errorResponse("Missing required fields");
   }
 
-  // Anti-bot: minimum 2 seconds per answer
-  if (timeTaken !== undefined && timeTaken < 2) {
+  // Anti-bot: minimum 1 second per answer
+  if (timeTaken !== undefined && timeTaken < 1) {
     return errorResponse("Answer too fast - suspicious activity");
   }
 
   // Validate session
   const sessions = await blink.db.table("quiz_sessions").list({
-    where: { id: sessionId, user_id: userId, status: "active" },
+    where: { id: sessionId, userId: userId, status: "active" },
     limit: 1,
   });
   if (sessions.length === 0) return errorResponse("Invalid or expired session");
 
   const session = sessions[0];
-  const questionIds = JSON.parse(session.question_ids);
-  const answeredIds = JSON.parse(session.answered_ids || "[]");
+  const questionIds = JSON.parse(session.questionIds);
+  const answeredIds = JSON.parse(session.answeredIds || "[]");
 
   // Check question belongs to session
   if (!questionIds.includes(questionId)) {
@@ -537,24 +537,24 @@ async function quizAnswer(blink: any, userId: string, body: any) {
   if (questions.length === 0) return errorResponse("Question not found");
 
   const question = questions[0];
-  const isCorrect = Number(selectedOption) === Number(question.correct_option);
+  const isCorrect = Number(selectedOption) === Number(question.correctOption);
 
   // Update session
   answeredIds.push(questionId);
   const newScore = (session.score || 0) + (isCorrect ? 1 : 0);
-  const earnedForThis = isCorrect ? question.reward_amount : 0;
-  const newTotalEarned = (session.total_earned || 0) + earnedForThis;
+  const earnedForThis = isCorrect ? question.rewardAmount : 0;
+  const newTotalEarned = (session.totalEarned || 0) + earnedForThis;
 
   await blink.db.table("quiz_sessions").update(sessionId, {
-    answered_ids: JSON.stringify(answeredIds),
+    answeredIds: JSON.stringify(answeredIds),
     score: newScore,
-    total_earned: newTotalEarned,
+    totalEarned: newTotalEarned,
   });
 
   return jsonResponse({
     success: true,
     isCorrect,
-    correctOption: question.correct_option,
+    correctOption: question.correctOption,
     earned: earnedForThis,
     sessionScore: newScore,
     sessionEarned: newTotalEarned,
@@ -568,21 +568,21 @@ async function finishQuiz(blink: any, userId: string, body: any) {
   if (!sessionId) return errorResponse("Missing sessionId");
 
   const sessions = await blink.db.table("quiz_sessions").list({
-    where: { id: sessionId, user_id: userId, status: "active" },
+    where: { id: sessionId, userId: userId, status: "active" },
     limit: 1,
   });
   if (sessions.length === 0) return errorResponse("Invalid or expired session");
 
   const session = sessions[0];
-  const questionIds = JSON.parse(session.question_ids);
-  const answeredIds = JSON.parse(session.answered_ids || "[]");
+  const questionIds = JSON.parse(session.questionIds);
+  const answeredIds = JSON.parse(session.answeredIds || "[]");
 
   // Must answer all questions
   if (answeredIds.length < questionIds.length) {
     return errorResponse(`Answer all questions first (${answeredIds.length}/${questionIds.length})`);
   }
 
-  let totalReward = session.total_earned || 0;
+  let totalReward = session.totalEarned || 0;
   let bonusReward = 0;
   const score = session.score || 0;
 
@@ -597,13 +597,13 @@ async function finishQuiz(blink: any, userId: string, body: any) {
   // Mark session complete
   await blink.db.table("quiz_sessions").update(sessionId, {
     status: "completed",
-    completed_at: new Date().toISOString(),
-    total_earned: totalReward,
+    completedAt: new Date().toISOString(),
+    totalEarned: totalReward,
   });
 
   // Grant rewards to user
   const profiles = await blink.db.table("user_profiles").list({
-    where: { user_id: userId },
+    where: { userId: userId },
     limit: 1,
   });
 
@@ -611,14 +611,14 @@ async function finishQuiz(blink: any, userId: string, body: any) {
     const profile = profiles[0];
     await blink.db.table("user_profiles").update(userId, {
       balance: (profile.balance || 0) + totalReward,
-      total_earned: (profile.total_earned || 0) + totalReward,
+      totalEarned: (profile.totalEarned || 0) + totalReward,
       xp: (profile.xp || 0) + xpReward,
     });
   }
 
   // Log transaction
   await blink.db.table("transactions").create({
-    user_id: userId,
+    userId: userId,
     amount: totalReward,
     type: "quiz",
     description: `Quiz completed: ${score}/${questionIds.length} correct${bonusReward > 0 ? " (PERFECT!)" : ""}`,
@@ -626,11 +626,11 @@ async function finishQuiz(blink: any, userId: string, body: any) {
 
   // Log for audit
   await blink.db.table("reward_logs").create({
-    user_id: userId,
-    reward_type: "quiz",
-    reward_amount: totalReward,
-    source_id: sessionId,
-    source_type: "quiz_session",
+    userId: userId,
+    rewardType: "quiz",
+    rewardAmount: totalReward,
+    sourceId: sessionId,
+    sourceType: "quiz_session",
   });
 
   return jsonResponse({
@@ -659,7 +659,7 @@ async function gameResult(blink: any, userId: string, body: any) {
   }
 
   const profiles = await blink.db.table("user_profiles").list({
-    where: { user_id: userId },
+    where: { userId: userId },
     limit: 1,
   });
   if (profiles.length === 0) return errorResponse("Profile not found");
@@ -689,7 +689,7 @@ async function gameResult(blink: any, userId: string, body: any) {
   });
 
   await blink.db.table("transactions").create({
-    user_id: userId,
+    userId: userId,
     amount: netChange,
     type: "game",
     description: `${gameType} ${multiplier > 0 ? "WIN" : "LOSS"} (${multiplier}x)`,

@@ -108,18 +108,28 @@ export default function QuizPlayPage() {
 
   const handleAnswer = async (optionIndex: number) => {
     if (answered || submitting || !questions[currentIndex]) return;
+
+    const timeTaken = (Date.now() - answerStartRef.current) / 1000;
+    
+    // Add a tiny artificial delay if they answered too fast (under 1.5s)
+    // to avoid the 2s anti-bot check in the edge function
+    if (timeTaken < 1.5) {
+      const remaining = 2000 - (Date.now() - answerStartRef.current);
+      if (remaining > 0) await new Promise(resolve => setTimeout(resolve, remaining));
+    }
+
     setSelected(optionIndex);
     setSubmitting(true);
     if (timerRef.current) clearInterval(timerRef.current);
 
-    const timeTaken = (Date.now() - answerStartRef.current) / 1000;
+    const finalTimeTaken = (Date.now() - answerStartRef.current) / 1000;
 
     try {
       const result = await rewardEngine.quizAnswer(
         sessionId,
         questions[currentIndex].id,
         optionIndex,
-        timeTaken
+        finalTimeTaken
       );
       setAnswered(true);
       setIsCorrect(result.isCorrect);
@@ -172,7 +182,15 @@ export default function QuizPlayPage() {
 
   const currentQuiz = questions[currentIndex];
   const parsedOptions: string[] = currentQuiz
-    ? (() => { try { return JSON.parse(currentQuiz.options); } catch { return []; } })()
+    ? (() => { 
+        try { 
+          if (Array.isArray(currentQuiz.options)) return currentQuiz.options;
+          if (typeof currentQuiz.options === 'string') return JSON.parse(currentQuiz.options);
+          return [];
+        } catch { 
+          return []; 
+        } 
+      })()
     : [];
 
   // =============== SETUP SCREEN ===============
