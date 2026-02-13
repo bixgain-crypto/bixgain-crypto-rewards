@@ -122,16 +122,19 @@ export default function ReferralsPage() {
                     <TrendingUp className="h-6 w-6 text-primary mx-auto mb-2" />
                     <p className="text-xs text-muted-foreground mb-1">Referrer Reward</p>
                     <p className="font-bold">100 BIX</p>
+                    <p className="text-[10px] text-muted-foreground">After 24h verification</p>
                   </div>
                   <div className="p-4 rounded-xl bg-white/5 border border-white/5 text-center">
                     <Gift className="h-6 w-6 text-primary mx-auto mb-2" />
                     <p className="text-xs text-muted-foreground mb-1">New User Bonus</p>
                     <p className="font-bold">50 BIX</p>
+                    <p className="text-[10px] text-muted-foreground">Instant on signup</p>
                   </div>
                   <div className="p-4 rounded-xl bg-white/5 border border-white/5 text-center">
                     <ShieldCheck className="h-6 w-6 text-primary mx-auto mb-2" />
-                    <p className="text-xs text-muted-foreground mb-1">Anti-Fraud</p>
-                    <p className="font-bold">Protected</p>
+                    <p className="text-xs text-muted-foreground mb-1">Ongoing Commission</p>
+                    <p className="font-bold">10% earnings</p>
+                    <p className="text-[10px] text-muted-foreground">From referral activity</p>
                   </div>
                 </div>
               </CardContent>
@@ -216,11 +219,11 @@ export default function ReferralsPage() {
                 </div>
                 <div className="flex gap-3">
                   <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-primary text-xs font-bold shrink-0">3</div>
-                  <p>You receive <span className="text-primary font-bold">100 BIX</span> and they get <span className="text-primary font-bold">50 BIX</span> instantly.</p>
+                  <p>They get <span className="text-primary font-bold">50 BIX</span> instantly. Your <span className="text-primary font-bold">100 BIX</span> arrives after 24h verification.</p>
                 </div>
                 <div className="flex gap-3">
                   <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-primary text-xs font-bold shrink-0">4</div>
-                  <p>All rewards processed via secure Reward Engine — no manipulation possible.</p>
+                  <p>Earn <span className="text-primary font-bold">10% commission</span> from your referral's task rewards. Fraud-proof and automatic.</p>
                 </div>
               </CardContent>
             </Card>

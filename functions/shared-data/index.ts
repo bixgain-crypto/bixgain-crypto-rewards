@@ -28,7 +28,7 @@ async function handler(req: Request): Promise<Response> {
     const table = url.searchParams.get("table");
     const limitParam = url.searchParams.get("limit");
 
-    if (!table || !["tasks", "quizzes", "store_items", "user_profiles", "referral_history"].includes(table)) {
+    if (!table || !["tasks", "quizzes", "store_items", "user_profiles", "referral_history", "platform_metrics"].includes(table)) {
       return new Response(
         JSON.stringify({ error: "Invalid table" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -51,6 +51,11 @@ async function handler(req: Request): Promise<Response> {
     // Only show active tasks
     if (table === "tasks") {
       options.where = { isActive: 1 };
+    }
+    // Platform metrics sorted by date desc
+    if (table === "platform_metrics") {
+      options.orderBy = { metricDate: "desc" };
+      if (!limitParam) options.limit = 30;
     }
 
     const data = await blink.db.table(table).list(options);

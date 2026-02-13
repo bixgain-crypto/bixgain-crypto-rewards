@@ -32,7 +32,6 @@ export default function QuestsPage() {
   const [rewardCode, setRewardCode] = useState('');
   const [verifyingCode, setVerifyingCode] = useState(false);
   const [pendingRewards, setPendingRewards] = useState<any[]>([]);
-  const [adminCode, setAdminCode] = useState('');
   const [generatingAdminCode, setGeneratingAdminCode] = useState(false);
 
   useEffect(() => {
@@ -70,12 +69,10 @@ export default function QuestsPage() {
     if (!rewardCode.trim()) return;
     setVerifyingCode(true);
     try {
-      const res = await rewardEngine.verifyRewardCode(rewardCode);
+      const res = await rewardEngine.redeemTaskCode(rewardCode);
       toast.success(res.message);
       setRewardCode('');
-      // Refresh pending rewards
-      const pendingRes = await rewardEngine.getPendingRewards();
-      setPendingRewards(pendingRes.pending || []);
+      refreshProfile();
     } catch (err: any) {
       toast.error(err.message || 'Verification failed');
     } finally {
@@ -84,12 +81,11 @@ export default function QuestsPage() {
   };
 
   const handleAdminGenerate = async () => {
-    if (!adminCode.trim()) return;
     setGeneratingAdminCode(true);
     try {
-      const res = await rewardEngine.adminGenerateCode(adminCode);
+      const res = await rewardEngine.adminGenerateCodeWindow(null, 3);
       toast.success(`Code generated: ${res.code}`);
-      setAdminCode('');
+      navigator.clipboard.writeText(res.code);
     } catch (err: any) {
       toast.error(err.message);
     } finally {
@@ -306,7 +302,7 @@ export default function QuestsPage() {
                   Reward Verification
                 </CardTitle>
                 <CardDescription>
-                  Enter the time-based code to claim your rewards.
+                  Enter the time-based code shared by admin to claim BIX. Codes expire after 3 hours.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -373,31 +369,26 @@ export default function QuestsPage() {
               </CardFooter>
             </Card>
 
-            {/* Admin Section */}
+            {/* Admin Quick Generate */}
             {isAdmin && (
               <Card className="border-orange-500/20 bg-orange-500/5">
                 <CardHeader>
                   <CardTitle className="text-sm flex items-center gap-2">
                     <ShieldCheck className="h-4 w-4 text-orange-400" />
-                    Admin Panel
+                    Quick Generate Code
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <Input 
-                      placeholder="New code..." 
-                      className="bg-background/50 border-white/10 h-8 text-xs"
-                      value={adminCode}
-                      onChange={(e) => setAdminCode(e.target.value)}
-                    />
-                  </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    Generate a secure random code valid for 3 hours. For full management, visit the Admin Panel.
+                  </p>
                   <Button 
                     variant="outline"
                     className="w-full border-orange-500/30 text-orange-400 h-8 text-xs font-bold"
                     onClick={handleAdminGenerate}
-                    disabled={generatingAdminCode || !adminCode.trim()}
+                    disabled={generatingAdminCode}
                   >
-                    {generatingAdminCode ? 'Generating...' : 'Generate Code'}
+                    {generatingAdminCode ? 'Generating...' : 'Generate & Copy Code'}
                   </Button>
                 </CardContent>
               </Card>
