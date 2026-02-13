@@ -11,13 +11,13 @@ import { Settings, Users, Database, ShieldAlert, Plus, CheckCircle, XCircle } fr
 import { toast } from 'sonner';
 
 export default function AdminPanel() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [users, setUsers] = useState<any[]>([]);
   const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Simple admin check - in a real app this would be a backend check or role-based
-  const isAdmin = user?.id === 'admin_user_id' || user?.email?.includes('admin');
+  // Robust admin check
+  const isAdmin = profile?.role === 'admin' || user?.email === 'bixgain@gmail.com';
 
   useEffect(() => {
     const fetchData = async () => {
