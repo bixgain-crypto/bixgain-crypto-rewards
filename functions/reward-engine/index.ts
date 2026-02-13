@@ -69,6 +69,9 @@ async function handler(req: Request): Promise<Response> {
       return errorResponse("Rate limited. Try again later.", 429);
     }
 
+    // Auto-process pending rewards for this user whenever they hit the engine
+    await autoProcessPending(blink, userId);
+
     switch (action) {
       case "process_referral":
         return await processReferral(blink, userId, body);
@@ -84,6 +87,12 @@ async function handler(req: Request): Promise<Response> {
         return await finishQuiz(blink, userId, body);
       case "game_result":
         return await gameResult(blink, userId, body);
+      case "verify_reward_code":
+        return await verifyRewardCode(blink, userId, body);
+      case "admin_generate_code":
+        return await adminGenerateCode(blink, userId, body);
+      case "get_pending_rewards":
+        return await getPendingRewards(blink, userId);
       default:
         return errorResponse("Invalid action");
     }
@@ -701,6 +710,159 @@ async function gameResult(blink: any, userId: string, body: any) {
     netChange,
     newBalance: (profile.balance || 0) + netChange,
     message: resultMsg,
+  });
+}
+
+// ===================== VERIFICATION SYSTEM =====================
+
+async function autoProcessPending(blink: any, userId: string) {
+  try {
+    const now = new Date().toISOString();
+    const pending = await blink.db.table("pending_rewards").list({
+      where: { 
+        userId: userId, 
+        status: "pending",
+        process_at: { $lte: now } 
+      }
+    });
+
+    for (const item of pending) {
+      await processReward(blink, item);
+    }
+  } catch (err) {
+    console.error("Auto-process error:", err);
+  }
+}
+
+async function processReward(blink: any, item: any) {
+  try {
+    const profile = await blink.db.table("user_profiles").get(item.userId);
+    if (!profile) return;
+
+    // Grant reward
+    await blink.db.table("user_profiles").update(item.userId, {
+      balance: (profile.balance || 0) + item.rewardAmount,
+      totalEarned: (profile.totalEarned || 0) + item.rewardAmount,
+      xp: (profile.xp || 0) + 10,
+    });
+
+    // Update status
+    await blink.db.table("pending_rewards").update(item.id, {
+      status: "processed"
+    });
+
+    // Log transaction
+    await blink.db.table("transactions").create({
+      userId: item.userId,
+      amount: item.rewardAmount,
+      type: item.rewardType || "verification",
+      description: `Verification reward: ${item.sourceId}`,
+    });
+
+    // Log for audit
+    await blink.db.table("reward_logs").create({
+      userId: item.userId,
+      rewardType: item.rewardType || "verification",
+      rewardAmount: item.rewardAmount,
+      sourceId: item.sourceId,
+      sourceType: item.sourceType || "verification_code",
+    });
+  } catch (err) {
+    console.error(`Failed to process reward ${item.id}:`, err);
+  }
+}
+
+async function verifyRewardCode(blink: any, userId: string, body: any) {
+  const { code } = body;
+  if (!code) return errorResponse("Code is required");
+
+  // Check if code exists and is active
+  const codes = await blink.db.table("verification_codes").list({
+    where: { code: code.trim().toUpperCase(), isActive: 1 },
+    limit: 1
+  });
+
+  if (codes.length === 0) {
+    return errorResponse("Invalid or inactive code");
+  }
+
+  const vCode = codes[0];
+  const now = new Date();
+  
+  if (vCode.expiresAt && new Date(vCode.expiresAt) < now) {
+    return errorResponse("Code has expired");
+  }
+
+  // Check if user already verified this specific code
+  const existing = await blink.db.table("pending_rewards").list({
+    where: { userId: userId, sourceId: vCode.id },
+    limit: 1
+  });
+
+  if (existing.length > 0) {
+    return errorResponse("You have already used this code");
+  }
+
+  // Schedule reward for 30 minutes later
+  const processAt = new Date(now.getTime() + 30 * 60 * 1000).toISOString();
+  const rewardAmount = 250; // Fixed reward for verification
+
+  await blink.db.table("pending_rewards").create({
+    id: `pr_${userId.slice(-6)}_${Date.now()}`,
+    userId: userId,
+    rewardType: "verification",
+    rewardAmount: rewardAmount,
+    sourceId: vCode.id,
+    sourceType: "verification_code",
+    processAt: processAt,
+    status: "pending"
+  });
+
+  return jsonResponse({
+    success: true,
+    message: "Verification successful! Your reward will be granted in 30 minutes.",
+    processAt: processAt
+  });
+}
+
+async function getPendingRewards(blink: any, userId: string) {
+  const pending = await blink.db.table("pending_rewards").list({
+    where: { userId: userId },
+    orderBy: { createdAt: "desc" },
+    limit: 20
+  });
+
+  return jsonResponse({
+    success: true,
+    pending
+  });
+}
+
+async function adminGenerateCode(blink: any, userId: string, body: any) {
+  // Simple check for admin role (can be refined)
+  const profile = await blink.db.table("user_profiles").get(userId);
+  // Assume user_id 'jzDmHyIboBQJgqMp93GRykVSJi83' is admin as per context
+  if (userId !== "jzDmHyIboBQJgqMp93GRykVSJi83") {
+    return errorResponse("Only admins can generate codes", 403);
+  }
+
+  const { code, expiresHours = 24 } = body;
+  if (!code) return errorResponse("Code is required");
+
+  const expiresAt = new Date(Date.now() + expiresHours * 60 * 60 * 1000).toISOString();
+  const id = `vc_${Date.now()}`;
+
+  await blink.db.table("verification_codes").create({
+    id,
+    code: code.trim().toUpperCase(),
+    isActive: 1,
+    expiresAt
+  });
+
+  return jsonResponse({
+    success: true,
+    code: code.toUpperCase(),
+    expiresAt
   });
 }
 

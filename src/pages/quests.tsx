@@ -4,11 +4,12 @@ import { useAuth } from '../hooks/use-auth';
 import { fetchSharedData } from '../lib/shared-data';
 import { rewardEngine } from '../lib/reward-engine';
 import { DashboardLayout } from '../components/dashboard-layout';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
+import { Input } from '../components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
-import { Zap, Share2, BrainCircuit, CheckCircle2, Lock, ArrowRight, Gift, Trophy, Sparkles, Globe, Eye } from 'lucide-react';
+import { Zap, Share2, BrainCircuit, CheckCircle2, Lock, ArrowRight, Gift, Trophy, Sparkles, Globe, Eye, ShieldCheck, Clock, Ticket } from 'lucide-react';
 import { toast } from 'sonner';
 
 const CATEGORY_ICONS: Record<string, any> = {
@@ -28,6 +29,11 @@ export default function QuestsPage() {
   const [verifyingTaskIds, setVerifyingTaskIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [claimingTask, setClaimingTask] = useState<string | null>(null);
+  const [rewardCode, setRewardCode] = useState('');
+  const [verifyingCode, setVerifyingCode] = useState(false);
+  const [pendingRewards, setPendingRewards] = useState<any[]>([]);
+  const [adminCode, setAdminCode] = useState('');
+  const [generatingAdminCode, setGeneratingAdminCode] = useState(false);
 
   useEffect(() => {
     const stored = localStorage.getItem('bix_verifying_tasks');
@@ -43,12 +49,14 @@ export default function QuestsPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [taskList, userTasks] = await Promise.all([
+        const [taskList, userTasks, pendingRes] = await Promise.all([
           fetchSharedData('tasks'),
           user ? blink.db.table('user_tasks').list({ where: { userId: user.id, status: 'completed' } }) : Promise.resolve([]),
+          user ? rewardEngine.getPendingRewards() : Promise.resolve({ pending: [] })
         ]);
         setTasks(taskList);
         setCompletedTaskIds(new Set(userTasks.map((ut: any) => ut.taskId)));
+        setPendingRewards(pendingRes.pending || []);
       } catch (err) {
         console.error('Error fetching quests:', err);
       } finally {
@@ -57,6 +65,37 @@ export default function QuestsPage() {
     };
     fetchData();
   }, [user]);
+
+  const handleVerifyCode = async () => {
+    if (!rewardCode.trim()) return;
+    setVerifyingCode(true);
+    try {
+      const res = await rewardEngine.verifyRewardCode(rewardCode);
+      toast.success(res.message);
+      setRewardCode('');
+      // Refresh pending rewards
+      const pendingRes = await rewardEngine.getPendingRewards();
+      setPendingRewards(pendingRes.pending || []);
+    } catch (err: any) {
+      toast.error(err.message || 'Verification failed');
+    } finally {
+      setVerifyingCode(false);
+    }
+  };
+
+  const handleAdminGenerate = async () => {
+    if (!adminCode.trim()) return;
+    setGeneratingAdminCode(true);
+    try {
+      const res = await rewardEngine.adminGenerateCode(adminCode);
+      toast.success(`Code generated: ${res.code}`);
+      setAdminCode('');
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setGeneratingAdminCode(false);
+    }
+  };
 
   const handleCompleteTask = async (task: any) => {
     if (!user || claimingTask) return;
@@ -106,6 +145,7 @@ export default function QuestsPage() {
   };
 
   const userLevel = Math.floor((profile?.totalEarned || 0) / 500) + 1;
+  const isAdmin = user?.id === 'jzDmHyIboBQJgqMp93GRykVSJi83';
 
   const socialTasks = tasks.filter(t => ['social', 'watch', 'sponsored'].includes(t.category));
   const milestoneTasks = tasks.filter(t => ['milestone', 'referral'].includes(t.category));
@@ -188,7 +228,7 @@ export default function QuestsPage() {
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
           <div>
             <h1 className="text-4xl font-display font-bold mb-2">Earning Center</h1>
-            <p className="text-muted-foreground">Complete quests to fill your wallet with BIX tokens.</p>
+            <p className="text-muted-foreground">Complete quests and verify codes to fill your wallet with BIX tokens.</p>
           </div>
           <div className="flex items-center gap-4 bg-primary/10 px-6 py-3 rounded-2xl border border-primary/20">
             <div className="text-right">
@@ -199,60 +239,171 @@ export default function QuestsPage() {
           </div>
         </div>
 
-        <Tabs defaultValue="tasks" className="w-full">
-          <TabsList className="bg-card border border-border">
-            <TabsTrigger value="tasks" className="gap-2"><Zap className="h-4 w-4" /> Active Quests</TabsTrigger>
-            <TabsTrigger value="daily" className="gap-2"><Sparkles className="h-4 w-4" /> Daily Tasks</TabsTrigger>
-            <TabsTrigger value="milestones" className="gap-2"><Trophy className="h-4 w-4" /> Milestones</TabsTrigger>
-          </TabsList>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2 space-y-8">
+            <Tabs defaultValue="tasks" className="w-full">
+              <TabsList className="bg-card border border-border">
+                <TabsTrigger value="tasks" className="gap-2"><Zap className="h-4 w-4" /> Active Quests</TabsTrigger>
+                <TabsTrigger value="daily" className="gap-2"><Sparkles className="h-4 w-4" /> Daily Tasks</TabsTrigger>
+                <TabsTrigger value="milestones" className="gap-2"><Trophy className="h-4 w-4" /> Milestones</TabsTrigger>
+              </TabsList>
 
-          <TabsContent value="tasks" className="mt-6 space-y-4">
-            {loading ? (
-              <div className="flex items-center justify-center py-12">
-                <div className="w-10 h-10 rounded-full border-4 border-primary border-t-transparent animate-spin" />
-              </div>
-            ) : socialTasks.length === 0 ? (
-              <div className="text-center py-12 text-muted-foreground">
-                <Globe className="h-10 w-10 mx-auto mb-3 opacity-40" />
-                <p>No active quests right now. Check back later!</p>
-              </div>
-            ) : (
-              socialTasks.map(renderTask)
-            )}
+              <TabsContent value="tasks" className="mt-6 space-y-4">
+                {loading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="w-10 h-10 rounded-full border-4 border-primary border-t-transparent animate-spin" />
+                  </div>
+                ) : socialTasks.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <Globe className="h-10 w-10 mx-auto mb-3 opacity-40" />
+                    <p>No active quests right now. Check back later!</p>
+                  </div>
+                ) : (
+                  socialTasks.map(renderTask)
+                )}
 
-            {/* Quiz CTA */}
-            <Card className="bg-gradient-to-r from-primary/10 to-accent/10 border-primary/20 hover:border-primary/40 transition-all cursor-pointer" onClick={() => (window.location.href = '/quiz')}>
-              <CardContent className="p-6 flex items-center justify-between">
-                <div className="flex items-center gap-6">
-                  <div className="w-14 h-14 rounded-2xl bg-primary/20 flex items-center justify-center border border-primary/30">
-                    <BrainCircuit className="h-7 w-7 text-primary" />
+                {/* Quiz CTA */}
+                <Card className="bg-gradient-to-r from-primary/10 to-accent/10 border-primary/20 hover:border-primary/40 transition-all cursor-pointer" onClick={() => (window.location.href = '/quiz')}>
+                  <CardContent className="p-6 flex items-center justify-between">
+                    <div className="flex items-center gap-6">
+                      <div className="w-14 h-14 rounded-2xl bg-primary/20 flex items-center justify-center border border-primary/30">
+                        <BrainCircuit className="h-7 w-7 text-primary" />
+                      </div>
+                      <div>
+                        <h3 className="text-xl font-bold">Take a Crypto Quiz</h3>
+                        <p className="text-muted-foreground">Test your knowledge and earn BIX. Choose difficulty and question count!</p>
+                      </div>
+                    </div>
+                    <Button className="gold-gradient font-bold gap-2 px-8 h-12">
+                      Start Quiz <ArrowRight className="h-4 w-4" />
+                    </Button>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="daily" className="mt-6 space-y-4">
+                {dailyTasks.map(renderTask)}
+                {dailyTasks.length === 0 && (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <Zap className="h-10 w-10 mx-auto mb-3 opacity-40" />
+                    <p>No daily tasks available. Come back tomorrow!</p>
                   </div>
-                  <div>
-                    <h3 className="text-xl font-bold">Take a Crypto Quiz</h3>
-                    <p className="text-muted-foreground">Test your knowledge and earn BIX. Choose difficulty and question count!</p>
-                  </div>
+                )}
+              </TabsContent>
+
+              <TabsContent value="milestones" className="mt-6 space-y-4">
+                {milestoneTasks.map(renderTask)}
+              </TabsContent>
+            </Tabs>
+          </div>
+
+          <div className="space-y-6">
+            {/* Reward Verification Section */}
+            <Card className="border-primary/20 bg-primary/5">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <ShieldCheck className="h-5 w-5 text-primary" />
+                  Reward Verification
+                </CardTitle>
+                <CardDescription>
+                  Enter the time-based code to claim your rewards.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Input 
+                    placeholder="Enter verification code..." 
+                    className="bg-background/50 border-white/10"
+                    value={rewardCode}
+                    onChange={(e) => setRewardCode(e.target.value)}
+                  />
+                  <p className="text-[10px] text-muted-foreground italic">
+                    Codes are posted regularly in our community channels.
+                  </p>
                 </div>
-                <Button className="gold-gradient font-bold gap-2 px-8 h-12">
-                  Start Quiz <ArrowRight className="h-4 w-4" />
+                <Button 
+                  className="w-full gold-gradient font-bold h-11"
+                  onClick={handleVerifyCode}
+                  disabled={verifyingCode || !rewardCode.trim()}
+                >
+                  {verifyingCode ? 'Verifying...' : 'Verify & Claim'}
                 </Button>
               </CardContent>
             </Card>
-          </TabsContent>
 
-          <TabsContent value="daily" className="mt-6 space-y-4">
-            {dailyTasks.map(renderTask)}
-            {dailyTasks.length === 0 && (
-              <div className="text-center py-12 text-muted-foreground">
-                <Zap className="h-10 w-10 mx-auto mb-3 opacity-40" />
-                <p>No daily tasks available. Come back tomorrow!</p>
-              </div>
+            {/* Pending Rewards List */}
+            <Card className="border-white/5 bg-card/30">
+              <CardHeader>
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-orange-400" />
+                  Pending Rewards
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {pendingRewards.length === 0 ? (
+                  <div className="text-center py-4 text-xs text-muted-foreground">
+                    No pending rewards.
+                  </div>
+                ) : (
+                  pendingRewards.map((pr) => (
+                    <div key={pr.id} className="p-3 rounded-lg bg-background/40 border border-white/5 flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-bold text-primary">+{pr.rewardAmount} BIX</p>
+                        <p className="text-[10px] text-muted-foreground">
+                          {pr.status === 'pending' ? 'Unlocks in 30 mins' : 'Processed'}
+                        </p>
+                      </div>
+                      {pr.status === 'pending' ? (
+                        <Badge variant="outline" className="text-[10px] border-orange-500/30 text-orange-400 gap-1">
+                          <Clock className="h-3 w-3" /> PENDING
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-[10px] border-green-500/30 text-green-400 gap-1">
+                          <CheckCircle2 className="h-3 w-3" /> DONE
+                        </Badge>
+                      )}
+                    </div>
+                  ))
+                )}
+              </CardContent>
+              <CardFooter className="pt-0">
+                <p className="text-[10px] text-muted-foreground">
+                  Rewards are automatically granted 30 minutes after verification.
+                </p>
+              </CardFooter>
+            </Card>
+
+            {/* Admin Section */}
+            {isAdmin && (
+              <Card className="border-orange-500/20 bg-orange-500/5">
+                <CardHeader>
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <ShieldCheck className="h-4 w-4 text-orange-400" />
+                    Admin Panel
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <Input 
+                      placeholder="New code..." 
+                      className="bg-background/50 border-white/10 h-8 text-xs"
+                      value={adminCode}
+                      onChange={(e) => setAdminCode(e.target.value)}
+                    />
+                  </div>
+                  <Button 
+                    variant="outline"
+                    className="w-full border-orange-500/30 text-orange-400 h-8 text-xs font-bold"
+                    onClick={handleAdminGenerate}
+                    disabled={generatingAdminCode || !adminCode.trim()}
+                  >
+                    {generatingAdminCode ? 'Generating...' : 'Generate Code'}
+                  </Button>
+                </CardContent>
+              </Card>
             )}
-          </TabsContent>
-
-          <TabsContent value="milestones" className="mt-6 space-y-4">
-            {milestoneTasks.map(renderTask)}
-          </TabsContent>
-        </Tabs>
+          </div>
+        </div>
       </div>
     </DashboardLayout>
   );

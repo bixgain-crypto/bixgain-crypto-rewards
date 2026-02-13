@@ -46,4 +46,13 @@ export const rewardEngine = {
 
   gameResult: (gameType: string, betAmount: number, outcome: string) =>
     callRewardEngine('game_result', { gameType, betAmount, outcome }),
+
+  verifyRewardCode: (code: string) =>
+    callRewardEngine('verify_reward_code', { code }),
+
+  getPendingRewards: () =>
+    callRewardEngine('get_pending_rewards'),
+
+  adminGenerateCode: (code: string, expiresHours: number = 24) =>
+    callRewardEngine('admin_generate_code', { code, expiresHours }),
 };
