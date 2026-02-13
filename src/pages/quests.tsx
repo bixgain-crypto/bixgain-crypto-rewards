@@ -140,7 +140,7 @@ export default function QuestsPage() {
     }
   };
 
-  const userLevel = Math.floor((profile?.totalEarned || 0) / 500) + 1;
+  const userLevel = profile?.level || Math.floor((profile?.xp || 0) / 1000000) + 1;
   const isAdmin = profile?.role === 'admin' || user?.email === 'bixgain@gmail.com';
 
   // Map all tasks to categories for display

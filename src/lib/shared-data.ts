@@ -1,4 +1,4 @@
-const SHARED_DATA_URL = 'https://gh9qbc8y--shared-data.functions.blink.new';
+const SHARED_DATA_URL = 'https://x79bsxgw--shared-data.functions.blink.new';
 
 export async function fetchSharedData(table: 'tasks' | 'quizzes' | 'store_items' | 'user_profiles' | 'referral_history' | 'platform_metrics', limit?: number) {
   const params = new URLSearchParams({ table });

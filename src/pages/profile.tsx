@@ -16,9 +16,9 @@ export default function ProfilePage() {
   const [editing, setEditing] = useState(false);
   const [displayName, setDisplayName] = useState(profile?.displayName || '');
 
-  const level = Math.floor((profile?.totalEarned || 0) / 500) + 1;
-  const xpInLevel = (profile?.totalEarned || 0) % 500;
-  const xpToNext = 500;
+  const level = profile?.level || Math.floor((profile?.xp || 0) / 1000000) + 1;
+  const xpInLevel = (profile?.xp || 0) % 1000000;
+  const xpToNext = 1000000;
 
   const handleSave = async () => {
     if (!user || !displayName.trim()) return;
@@ -100,11 +100,11 @@ export default function ProfilePage() {
           <CardContent>
             <div className="flex items-center justify-between text-sm mb-2">
               <span className="font-medium">Level {level}</span>
-              <span className="text-muted-foreground">{xpInLevel} / {xpToNext} XP</span>
+              <span className="text-muted-foreground">{xpInLevel.toLocaleString()} / {xpToNext.toLocaleString()} XP</span>
               <span className="font-medium">Level {level + 1}</span>
             </div>
             <Progress value={(xpInLevel / xpToNext) * 100} className="h-3" />
-            <p className="text-xs text-muted-foreground mt-3">Every 500 BIX earned advances you one level. Higher levels unlock better rewards and multipliers.</p>
+            <p className="text-xs text-muted-foreground mt-3">Every 1,000,000 XP earned advances you one level. Higher levels unlock better rewards and multipliers.</p>
           </CardContent>
         </Card>
 

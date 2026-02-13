@@ -24,7 +24,7 @@ export default function LeaderboardPage() {
             userId: p.userId || p.id,
             displayName: p.displayName || 'Anon Miner',
             balance: p.balance || 0,
-            level: Math.floor((p.totalEarned || 0) / 500) + 1,
+            level: p.level || Math.floor((p.xp || 0) / 1000000) + 1,
             rank: i + 1,
           }));
         setLeaderboard(ranked);
@@ -138,7 +138,7 @@ export default function LeaderboardPage() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <span className="text-muted-foreground">Lvl {Math.floor((profile?.totalEarned || 0) / 500) + 1}</span>
+                      <span className="text-muted-foreground">Lvl {profile.level || Math.floor((profile.xp || 0) / 1000000) + 1}</span>
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1 font-bold text-primary">

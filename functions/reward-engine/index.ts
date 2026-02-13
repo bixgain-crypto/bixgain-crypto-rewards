@@ -73,6 +73,34 @@ function generateSecureCode(length = 8): string {
   return Array.from(array, (b) => chars[b % chars.length]).join("");
 }
 
+// ===================== XP AND LEVELING SYSTEM =====================
+const XP_PER_LEVEL = 1000000;
+
+function calculateLevel(xp: number): number {
+  return Math.floor(xp / XP_PER_LEVEL) + 1;
+}
+
+// Helper to update user profile with XP and balance, handling level ups
+async function updateUserBalanceAndXP(blink: any, userId: string, data: { balanceChange: number; earnedChange: number; xpChange: number }) {
+  const profile = await blink.db.table("user_profiles").get(userId);
+  if (!profile) return null;
+
+  const newXP = (profile.xp || 0) + data.xpChange;
+  const newLevel = calculateLevel(newXP);
+  const leveledUp = newLevel > (profile.level || 1);
+
+  const updateData: any = {
+    balance: (profile.balance || 0) + data.balanceChange,
+    totalEarned: (profile.totalEarned || 0) + data.earnedChange,
+    xp: newXP,
+    level: newLevel,
+  };
+
+  await blink.db.table("user_profiles").update(userId, updateData);
+  
+  return { ...profile, ...updateData, leveledUp };
+}
+
 // ===================== ABUSE DETECTION =====================
 async function checkAbuseThrottling(blink: any, userId: string, ipHash: string): Promise<{ allowed: boolean; multiplier: number; reason?: string }> {
   // Check if user is flagged
@@ -290,7 +318,7 @@ async function adminGenerateCodeWindow(blink: any, userId: string, body: any) {
     return errorResponse("Admin access required", 403);
   }
 
-  const { taskId, validHours = 3, maxRedemptions } = body;
+  const {taskId, validHours = 3, maxRedemptions} = body;
 
   // Validate task exists
   if (taskId) {
@@ -499,11 +527,11 @@ async function redeemTaskCode(
       currentRedemptions: (window.currentRedemptions || 0) + 1,
     });
 
-    // Update user balance
-    await blink.db.table("user_profiles").update(userId, {
-      balance: (profile.balance || 0) + rewardAmount,
-      totalEarned: (profile.totalEarned || 0) + rewardAmount,
-      xp: (profile.xp || 0) + 10,
+    // Update user balance and XP
+    const updatedProfile = await updateUserBalanceAndXP(blink, userId, {
+      balanceChange: rewardAmount,
+      earnedChange: rewardAmount,
+      xpChange: 100, // Significant XP for code redemption
     });
 
     // Log transaction
@@ -534,8 +562,10 @@ async function redeemTaskCode(
       success: true,
       reward: rewardAmount,
       multiplier: abuseCheck.multiplier,
-      newBalance: (profile.balance || 0) + rewardAmount,
-      message: `+${rewardAmount} BIX earned!`,
+      newBalance: updatedProfile?.balance,
+      newLevel: updatedProfile?.level,
+      leveledUp: updatedProfile?.leveledUp,
+      message: `+${rewardAmount} BIX earned!${updatedProfile?.leveledUp ? " LEVEL UP!" : ""}`,
     });
   } catch (err) {
     console.error("Redemption error:", err);
@@ -653,13 +683,10 @@ async function autoProcessPending(blink: any, userId: string) {
 
 async function processReward(blink: any, item: any) {
   try {
-    const profile = await blink.db.table("user_profiles").get(item.userId);
-    if (!profile) return;
-
-    await blink.db.table("user_profiles").update(item.userId, {
-      balance: (profile.balance || 0) + item.rewardAmount,
-      totalEarned: (profile.totalEarned || 0) + item.rewardAmount,
-      xp: (profile.xp || 0) + 10,
+    const updatedProfile = await updateUserBalanceAndXP(blink, item.userId, {
+      balanceChange: item.rewardAmount,
+      earnedChange: item.rewardAmount,
+      xpChange: 50,
     });
 
     await blink.db.table("pending_rewards").update(item.id, { status: "processed" });
@@ -685,13 +712,10 @@ async function processReward(blink: any, item: any) {
 
 async function processCommission(blink: any, comm: any) {
   try {
-    const referrerProfile = await blink.db.table("user_profiles").get(comm.referrerId);
-    if (!referrerProfile) return;
-
-    await blink.db.table("user_profiles").update(comm.referrerId, {
-      balance: (referrerProfile.balance || 0) + comm.commissionAmount,
-      totalEarned: (referrerProfile.totalEarned || 0) + comm.commissionAmount,
-      xp: (referrerProfile.xp || 0) + 5,
+    const updatedProfile = await updateUserBalanceAndXP(blink, comm.referrerId, {
+      balanceChange: comm.commissionAmount,
+      earnedChange: comm.commissionAmount,
+      xpChange: 25,
     });
 
     await blink.db.table("referral_commissions").update(comm.id, {
@@ -797,15 +821,11 @@ async function processReferral(blink: any, newUserId: string, body: any, ipHash:
     });
 
     // 2. Update new user: mark referred_by + grant signup bonus
-    if (newUserProfiles.length > 0) {
-      const newProfile = newUserProfiles[0];
-      await blink.db.table("user_profiles").update(newUserId, {
-        referredBy: referrer.userId,
-        balance: (newProfile.balance || 0) + NEW_USER_REWARD,
-        totalEarned: (newProfile.totalEarned || 0) + NEW_USER_REWARD,
-        xp: (newProfile.xp || 0) + 25,
-      });
-    }
+    const updatedProfile = await updateUserBalanceAndXP(blink, newUserId, {
+      balanceChange: NEW_USER_REWARD,
+      earnedChange: NEW_USER_REWARD,
+      xpChange: 100,
+    });
 
     // 3. Log new user transaction
     await blink.db.table("transactions").create({
@@ -832,6 +852,9 @@ async function processReferral(blink: any, newUserId: string, body: any, ipHash:
     return jsonResponse({
       success: true,
       newUserReward: NEW_USER_REWARD,
+      newBalance: updatedProfile?.balance,
+      newLevel: updatedProfile?.level,
+      leveledUp: updatedProfile?.leveledUp,
       message: `Referral successful! You earned ${NEW_USER_REWARD} BIX. Your referrer will be rewarded after verification.`,
     });
   } catch (err) {
@@ -856,7 +879,7 @@ async function completeTask(blink: any, userId: string, body: any) {
   if (profiles.length === 0) return errorResponse("Profile not found");
   const profile = profiles[0];
 
-  const userLevel = Math.floor((profile.totalEarned || 0) / 500) + 1;
+  const userLevel = profile.level || Math.floor((profile.xp || 0) / 1000000) + 1;
   if (task.requiredLevel && userLevel < task.requiredLevel) {
     return errorResponse(`Requires Level ${task.requiredLevel}`);
   }
@@ -898,7 +921,7 @@ async function completeTask(blink: any, userId: string, body: any) {
   }
 
   const reward = task.rewardAmount || 0;
-  const xpReward = task.xpReward || 0;
+  const xpReward = task.xpReward || 100;
 
   try {
     await blink.db.table("user_tasks").create({
@@ -908,10 +931,10 @@ async function completeTask(blink: any, userId: string, body: any) {
       completedAt: new Date().toISOString(),
     });
 
-    await blink.db.table("user_profiles").update(userId, {
-      balance: (profile.balance || 0) + reward,
-      totalEarned: (profile.totalEarned || 0) + reward,
-      xp: (profile.xp || 0) + xpReward,
+    const updatedProfile = await updateUserBalanceAndXP(blink, userId, {
+      balanceChange: reward,
+      earnedChange: reward,
+      xpChange: xpReward,
     });
 
     await blink.db.table("transactions").create({
@@ -936,8 +959,10 @@ async function completeTask(blink: any, userId: string, body: any) {
       success: true,
       reward,
       xp: xpReward,
-      newBalance: (profile.balance || 0) + reward,
-      message: `+${reward} BIX earned!`,
+      newBalance: updatedProfile?.balance,
+      newLevel: updatedProfile?.level,
+      leveledUp: updatedProfile?.leveledUp,
+      message: `+${reward} BIX earned!${updatedProfile?.leveledUp ? " LEVEL UP!" : ""}`,
     });
   } catch (err) {
     console.error("Task completion error:", err);
@@ -970,15 +995,18 @@ async function dailyCheckin(blink: any, userId: string) {
   const multiplier = Math.min(1 + (newStreak - 1) * 0.5, 5);
   const baseReward = 10;
   const reward = Math.round(baseReward * multiplier);
-  const xpReward = 5 + newStreak;
+  const xpReward = 50 + (newStreak * 10);
 
   try {
+    const updatedProfile = await updateUserBalanceAndXP(blink, userId, {
+      balanceChange: reward,
+      earnedChange: reward,
+      xpChange: xpReward,
+    });
+
     await blink.db.table("user_profiles").update(userId, {
-      balance: (profile.balance || 0) + reward,
-      totalEarned: (profile.totalEarned || 0) + reward,
       lastLogin: today,
       dailyStreak: newStreak,
-      xp: (profile.xp || 0) + xpReward,
     });
 
     await blink.db.table("transactions").create({
@@ -1008,6 +1036,9 @@ async function dailyCheckin(blink: any, userId: string) {
       streak: newStreak,
       multiplier,
       xp: xpReward,
+      newBalance: updatedProfile?.balance,
+      newLevel: updatedProfile?.level,
+      leveledUp: updatedProfile?.leveledUp,
       message: `+${reward} BIX! ${newStreak}-day streak (${multiplier}x)`,
     });
   } catch (err) {
@@ -1161,7 +1192,7 @@ async function finishQuiz(blink: any, userId: string, body: any) {
     totalReward += bonusReward;
   }
 
-  const xpReward = score * 5 + (bonusReward > 0 ? 50 : 0);
+  const xpReward = score * 10 + (bonusReward > 0 ? 500 : 0);
 
   await blink.db.table("quiz_sessions").update(sessionId, {
     status: "completed",
@@ -1169,15 +1200,11 @@ async function finishQuiz(blink: any, userId: string, body: any) {
     totalEarned: totalReward,
   });
 
-  const profiles = await blink.db.table("user_profiles").list({ where: { userId }, limit: 1 });
-  if (profiles.length > 0) {
-    const profile = profiles[0];
-    await blink.db.table("user_profiles").update(userId, {
-      balance: (profile.balance || 0) + totalReward,
-      totalEarned: (profile.totalEarned || 0) + totalReward,
-      xp: (profile.xp || 0) + xpReward,
-    });
-  }
+  const updatedProfile = await updateUserBalanceAndXP(blink, userId, {
+    balanceChange: totalReward,
+    earnedChange: totalReward,
+    xpChange: xpReward,
+  });
 
   await blink.db.table("transactions").create({
     userId,
@@ -1204,6 +1231,9 @@ async function finishQuiz(blink: any, userId: string, body: any) {
     totalReward,
     bonusReward,
     xp: xpReward,
+    newBalance: updatedProfile?.balance,
+    newLevel: updatedProfile?.level,
+    leveledUp: updatedProfile?.leveledUp,
     isPerfect: score === questionIds.length,
     message: `Quiz complete! ${score}/${questionIds.length} correct. +${totalReward} BIX!`,
   });
@@ -1236,9 +1266,19 @@ async function gameResult(blink: any, userId: string, body: any) {
 
   const netChange = (betAmount * multiplier) - betAmount;
 
-  await blink.db.table("user_profiles").update(userId, {
-    balance: (profile.balance || 0) + netChange,
-  });
+  // Add XP and track total earned only if they WON
+  if (netChange > 0) {
+    await updateUserBalanceAndXP(blink, userId, {
+      balanceChange: netChange,
+      earnedChange: netChange,
+      xpChange: Math.round(netChange / 10), // 1 XP for every 10 BIX won
+    });
+  } else {
+    // If they lost, only deduct balance
+    await blink.db.table("user_profiles").update(userId, {
+      balance: (profile.balance || 0) + netChange,
+    });
+  }
 
   await blink.db.table("transactions").create({
     userId,
