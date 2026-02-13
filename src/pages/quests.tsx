@@ -141,11 +141,17 @@ export default function QuestsPage() {
   };
 
   const userLevel = Math.floor((profile?.totalEarned || 0) / 500) + 1;
-  const isAdmin = user?.id === 'jzDmHyIboBQJgqMp93GRykVSJi83';
+  const isAdmin = profile?.role === 'admin' || user?.email === 'bixgain@gmail.com';
 
-  const socialTasks = tasks.filter(t => ['social', 'watch', 'sponsored'].includes(t.category));
+  // Map all tasks to categories for display
+  const socialTasks = tasks.filter(t => ['social', 'watch', 'sponsored', 'quiz'].includes(t.category) && t.taskType !== 'daily' && t.category !== 'daily');
   const milestoneTasks = tasks.filter(t => ['milestone', 'referral'].includes(t.category));
   const dailyTasks = tasks.filter(t => t.taskType === 'daily' || t.category === 'daily');
+  const otherTasks = tasks.filter(t => 
+    !socialTasks.includes(t) && 
+    !milestoneTasks.includes(t) && 
+    !dailyTasks.includes(t)
+  );
 
   const renderTask = (task: any) => {
     const isCompleted = completedTaskIds.has(task.id);
@@ -249,13 +255,16 @@ export default function QuestsPage() {
                   <div className="flex items-center justify-center py-12">
                     <div className="w-10 h-10 rounded-full border-4 border-primary border-t-transparent animate-spin" />
                   </div>
-                ) : socialTasks.length === 0 ? (
+                ) : socialTasks.length === 0 && otherTasks.length === 0 ? (
                   <div className="text-center py-12 text-muted-foreground">
                     <Globe className="h-10 w-10 mx-auto mb-3 opacity-40" />
                     <p>No active quests right now. Check back later!</p>
                   </div>
                 ) : (
-                  socialTasks.map(renderTask)
+                  <>
+                    {socialTasks.map(renderTask)}
+                    {otherTasks.map(renderTask)}
+                  </>
                 )}
 
                 {/* Quiz CTA */}

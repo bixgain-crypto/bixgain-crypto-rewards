@@ -10,6 +10,18 @@ import { Input } from '../components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Badge } from '../components/ui/badge';
+import { Label } from '../components/ui/label';
+import { Textarea } from '../components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "../components/ui/dialog";
 import { Settings, Users, Database, ShieldAlert, Plus, CheckCircle, XCircle, Key, BarChart3, AlertTriangle, Clock, Copy, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import AdminCodeManager from '../components/admin-code-manager';
@@ -21,26 +33,92 @@ export default function AdminPanel() {
   const [users, setUsers] = useState<any[]>([]);
   const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [creatingTask, setCreatingTask] = useState(false);
+  const [newTask, setNewTask] = useState({
+    title: '',
+    description: '',
+    category: 'social',
+    taskType: 'one-time',
+    rewardAmount: 100,
+    xpReward: 50,
+    requiredLevel: 0,
+    link: '',
+  });
 
   const isAdmin = profile?.role === 'admin' || user?.email === 'bixgain@gmail.com';
 
+  const fetchData = async () => {
+    try {
+      const [userList, taskList] = await Promise.all([
+        blink.db.userProfiles.list({ limit: 50, orderBy: { balance: 'desc' } }),
+        blink.db.tasks.list({ orderBy: { createdAt: 'desc' } }),
+      ]);
+      setUsers(userList);
+      setTasks(taskList);
+    } catch (err) {
+      console.error('Error fetching admin data:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [userList, taskList] = await Promise.all([
-          blink.db.userProfiles.list({ limit: 50, orderBy: { balance: 'desc' } }),
-          fetchSharedData('tasks'),
-        ]);
-        setUsers(userList);
-        setTasks(taskList);
-      } catch (err) {
-        console.error('Error fetching admin data:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
     if (isAdmin) fetchData();
   }, [isAdmin]);
+
+  const handleCreateTask = async () => {
+    if (!newTask.title) {
+      toast.error('Title is required');
+      return;
+    }
+
+    setCreatingTask(true);
+    try {
+      await blink.db.tasks.create({
+        ...newTask,
+        isActive: 1,
+      });
+      toast.success('Task created successfully');
+      setIsCreateDialogOpen(false);
+      setNewTask({
+        title: '',
+        description: '',
+        category: 'social',
+        taskType: 'one-time',
+        rewardAmount: 100,
+        xpReward: 50,
+        requiredLevel: 0,
+        link: '',
+      });
+      fetchData();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to create task');
+    } finally {
+      setCreatingTask(false);
+    }
+  };
+
+  const handleToggleTaskStatus = async (taskId: string, currentStatus: number) => {
+    try {
+      await blink.db.tasks.update(taskId, { isActive: currentStatus > 0 ? 0 : 1 });
+      toast.success('Task status updated');
+      fetchData();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to update task');
+    }
+  };
+
+  const handleDeleteTask = async (taskId: string) => {
+    if (!confirm('Are you sure you want to delete this task?')) return;
+    try {
+      await blink.db.tasks.delete(taskId);
+      toast.success('Task deleted');
+      fetchData();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to delete task');
+    }
+  };
 
   if (!isAdmin) {
     return (
@@ -130,6 +208,121 @@ export default function AdminPanel() {
                   <CardTitle>Reward Tasks</CardTitle>
                   <CardDescription>Configure quests and earning opportunities</CardDescription>
                 </div>
+                <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+                  <DialogTrigger asChild>
+                    <Button className="gold-gradient gold-glow gap-2">
+                      <Plus className="h-4 w-4" /> New Task
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="sm:max-w-[500px] glass-card border-white/10 text-foreground">
+                    <DialogHeader>
+                      <DialogTitle>Create New Quest</DialogTitle>
+                      <DialogDescription>Fill in the details for the new earning opportunity.</DialogDescription>
+                    </DialogHeader>
+                    <div className="grid gap-4 py-4">
+                      <div className="grid gap-2">
+                        <Label htmlFor="title">Task Title</Label>
+                        <Input
+                          id="title"
+                          placeholder="e.g. Follow us on Twitter"
+                          value={newTask.title}
+                          onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="description">Description</Label>
+                        <Textarea
+                          id="description"
+                          placeholder="What should the user do?"
+                          value={newTask.description}
+                          onChange={(e) => setNewTask({ ...newTask, description: e.target.value })}
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="grid gap-2">
+                          <Label>Category</Label>
+                          <Select
+                            value={newTask.category}
+                            onValueChange={(val) => setNewTask({ ...newTask, category: val })}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select category" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="social">Social</SelectItem>
+                              <SelectItem value="daily">Daily</SelectItem>
+                              <SelectItem value="watch">Watch</SelectItem>
+                              <SelectItem value="quiz">Quiz</SelectItem>
+                              <SelectItem value="referral">Referral</SelectItem>
+                              <SelectItem value="milestone">Milestone</SelectItem>
+                              <SelectItem value="sponsored">Sponsored</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="grid gap-2">
+                          <Label>Type</Label>
+                          <Select
+                            value={newTask.taskType}
+                            onValueChange={(val) => setNewTask({ ...newTask, taskType: val })}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select type" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="one-time">One-time</SelectItem>
+                              <SelectItem value="daily">Daily</SelectItem>
+                              <SelectItem value="recursive">Recursive</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-3 gap-4">
+                        <div className="grid gap-2">
+                          <Label htmlFor="reward">Reward (BIX)</Label>
+                          <Input
+                            id="reward"
+                            type="number"
+                            value={newTask.rewardAmount}
+                            onChange={(e) => setNewTask({ ...newTask, rewardAmount: parseInt(e.target.value) || 0 })}
+                          />
+                        </div>
+                        <div className="grid gap-2">
+                          <Label htmlFor="xp">XP</Label>
+                          <Input
+                            id="xp"
+                            type="number"
+                            value={newTask.xpReward}
+                            onChange={(e) => setNewTask({ ...newTask, xpReward: parseInt(e.target.value) || 0 })}
+                          />
+                        </div>
+                        <div className="grid gap-2">
+                          <Label htmlFor="level">Min Level</Label>
+                          <Input
+                            id="level"
+                            type="number"
+                            value={newTask.requiredLevel}
+                            onChange={(e) => setNewTask({ ...newTask, requiredLevel: parseInt(e.target.value) || 0 })}
+                          />
+                        </div>
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="link">Link (Optional)</Label>
+                        <Input
+                          id="link"
+                          placeholder="https://..."
+                          value={newTask.link}
+                          onChange={(e) => setNewTask({ ...newTask, link: e.target.value })}
+                        />
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>Cancel</Button>
+                      <Button onClick={handleCreateTask} disabled={creatingTask} className="gold-gradient">
+                        {creatingTask ? 'Creating...' : 'Create Task'}
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
               </CardHeader>
               <CardContent className="overflow-x-auto">
                 <Table>
@@ -140,21 +333,43 @@ export default function AdminPanel() {
                       <TableHead>Reward</TableHead>
                       <TableHead>Category</TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {tasks.map((t) => (
                       <TableRow key={t.id}>
-                        <TableCell className="text-xs text-muted-foreground">{t.id}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{t.id.slice(-6)}</TableCell>
                         <TableCell className="font-medium">{t.title}</TableCell>
                         <TableCell className="font-bold text-primary">{t.rewardAmount} BIX</TableCell>
-                        <TableCell className="capitalize">{t.category}</TableCell>
+                        <TableCell className="capitalize text-xs">{t.category}</TableCell>
                         <TableCell>
                           {Number(t.isActive) > 0 ? (
-                            <span className="flex items-center gap-1 text-green-400 text-xs font-medium"><CheckCircle className="h-3 w-3" /> Active</span>
+                            <Badge className="bg-green-500/20 text-green-400 border-green-500/30">Active</Badge>
                           ) : (
-                            <span className="flex items-center gap-1 text-red-400 text-xs font-medium"><XCircle className="h-3 w-3" /> Inactive</span>
+                            <Badge className="bg-red-500/20 text-red-400 border-red-500/30">Inactive</Badge>
                           )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-8 w-8"
+                              onClick={() => handleToggleTaskStatus(t.id, Number(t.isActive))}
+                              title={Number(t.isActive) > 0 ? "Deactivate" : "Activate"}
+                            >
+                              {Number(t.isActive) > 0 ? <XCircle className="h-4 w-4 text-orange-400" /> : <CheckCircle className="h-4 w-4 text-green-400" />}
+                            </Button>
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-8 w-8 text-red-400 hover:text-red-300 hover:bg-red-400/10"
+                              onClick={() => handleDeleteTask(t.id)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
