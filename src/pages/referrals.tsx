@@ -61,10 +61,10 @@ export default function ReferralsPage() {
   };
 
   const milestones = [
-    { count: 1, reward: 100, label: 'First Referral' },
-    { count: 5, reward: 500, label: '5 Referrals' },
-    { count: 25, reward: 2500, label: '25 Referrals' },
-    { count: 50, reward: 5000, label: 'Influencer' },
+    { count: 1, reward: 500, label: 'First Referral' },
+    { count: 5, reward: 5000, label: '5 Referrals' },
+    { count: 25, reward: 50000, label: '25 Referrals' },
+    { count: 50, reward: 150000, label: 'Influencer' },
   ];
 
   return (
