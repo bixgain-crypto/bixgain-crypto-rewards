@@ -48,6 +48,10 @@ async function handler(req: Request): Promise<Response> {
       options.orderBy = { created_at: "desc" };
       if (!limitParam) options.limit = 20;
     }
+    // Only show active tasks
+    if (table === "tasks") {
+      options.where = { is_active: 1 };
+    }
 
     const data = await blink.db.table(table).list(options);
 

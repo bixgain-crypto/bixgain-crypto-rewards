@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { blink } from '../lib/blink';
 import { useAuth } from '../hooks/use-auth';
 import { fetchSharedData } from '../lib/shared-data';
+import { rewardEngine } from '../lib/reward-engine';
 import { DashboardLayout } from '../components/dashboard-layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -28,35 +28,19 @@ export default function DashboardPage() {
     fetchTasks();
   }, []);
 
+  const [checkinLoading, setCheckinLoading] = useState(false);
+
   const handleDailyCheckin = async () => {
-    if (!user) return;
+    if (!user || checkinLoading) return;
+    setCheckinLoading(true);
     try {
-      const lastLogin = profile?.lastLogin;
-      const today = new Date().toISOString().split('T')[0];
-      
-      if (lastLogin === today) {
-        toast.info('Already checked in today!');
-        return;
-      }
-
-      const reward = 10;
-      await blink.db.userProfiles.update(user.id, {
-        balance: (profile.balance || 0) + reward,
-        lastLogin: today,
-        dailyStreak: (profile.dailyStreak || 0) + 1,
-      });
-
-      await blink.db.transactions.create({
-        userId: user.id,
-        amount: reward,
-        type: 'earn',
-        description: 'Daily Login Reward',
-      });
-
-      toast.success(`Check-in successful! +${reward} BIX earned.`);
+      const result = await rewardEngine.dailyCheckin();
+      toast.success(result.message);
       refreshProfile();
-    } catch (err) {
-      toast.error('Failed to check in.');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to check in.');
+    } finally {
+      setCheckinLoading(false);
     }
   };
 
@@ -92,7 +76,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">Lvl {Math.floor((profile?.totalEarned || 0) / 500) + 1}</div>
-            <p className="text-xs text-muted-foreground mt-1">Every 500 BIX = 1 Level</p>
+            <p className="text-xs text-muted-foreground mt-1">{profile?.xp || 0} XP earned</p>
           </CardContent>
         </Card>
 
@@ -159,8 +143,9 @@ export default function DashboardPage() {
                 <Button 
                   className="w-full bg-background text-primary hover:bg-background/90 font-bold"
                   onClick={handleDailyCheckin}
+                  disabled={checkinLoading}
                 >
-                  Claim 10 BIX
+                  {checkinLoading ? 'Claiming...' : `Claim ${profile?.dailyStreak ? Math.round(10 * Math.min(1 + ((profile.dailyStreak || 0)) * 0.5, 5)) : 10} BIX`}
                 </Button>
               </div>
               <Coins className="absolute -bottom-4 -right-4 h-32 w-32 text-white/10 rotate-12 group-hover:rotate-45 transition-transform duration-700" />

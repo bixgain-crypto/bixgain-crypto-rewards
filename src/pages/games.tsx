@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
-import { blink } from '../lib/blink';
+import { useState } from 'react';
 import { useAuth } from '../hooks/use-auth';
+import { rewardEngine } from '../lib/reward-engine';
 import { DashboardLayout } from '../components/dashboard-layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -14,57 +14,29 @@ export default function GamesPage() {
   const [isSpinning, setIsSpinning] = useState(false);
 
   const handlePlayRoulette = async () => {
-    if (!user || profile.balance < betAmount) {
+    if (!user || (profile?.balance || 0) < betAmount) {
       toast.error('Insufficient BIX balance!');
       return;
     }
 
     setIsSpinning(true);
     
-    // Simulate server-side logic in client for MVP
-    setTimeout(async () => {
-      try {
-        const winChance = Math.random();
-        let multiplier = 0;
-        let message = 'Better luck next time!';
-        let type = 'lose';
-
-        if (winChance > 0.9) {
-          multiplier = 5;
-          message = 'JACKPOT! You won 5x your bet!';
-          type = 'win';
-        } else if (winChance > 0.6) {
-          multiplier = 2;
-          message = 'Great! You won 2x your bet!';
-          type = 'win';
-        }
-
-        const netChange = (betAmount * multiplier) - betAmount;
-
-        await blink.db.userProfiles.update(user.id, {
-          balance: profile.balance + netChange,
-        });
-
-        await blink.db.transactions.create({
-          userId: user.id,
-          amount: netChange,
-          type: 'game',
-          description: `BixGain Roulette (${type.toUpperCase()})`,
-        });
-
-        if (type === 'win') {
-          toast.success(message);
-        } else {
-          toast.error(message);
-        }
-
-        refreshProfile();
-      } catch (err) {
-        toast.error('Game error occurred.');
-      } finally {
-        setIsSpinning(false);
+    // Add visual delay for spinning effect
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    try {
+      const result = await rewardEngine.gameResult('roulette', betAmount, 'spin');
+      if (result.multiplier > 0) {
+        toast.success(result.message);
+      } else {
+        toast.error(result.message);
       }
-    }, 2000);
+      refreshProfile();
+    } catch (err: any) {
+      toast.error(err.message || 'Game error occurred.');
+    } finally {
+      setIsSpinning(false);
+    }
   };
 
   return (

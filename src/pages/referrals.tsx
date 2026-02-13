@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../co
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Badge } from '../components/ui/badge';
-import { Users, Copy, Share2, TrendingUp, Gift, Zap } from 'lucide-react';
+import { Users, Copy, Share2, TrendingUp, Gift, Zap, ShieldCheck, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function ReferralsPage() {
@@ -19,22 +19,23 @@ export default function ReferralsPage() {
     const fetchReferrals = async () => {
       if (!user) return;
       try {
+        // Use user's own referral history (RLS filters to their records)
         const history = await blink.db.referralHistory.list({
           where: { referrerId: user.id },
           orderBy: { createdAt: 'desc' },
-          limit: 10,
+          limit: 20,
         });
         setReferralHistory(history);
         setReferralCount(history.length);
       } catch {
-        /* referral_history may be empty */
+        // referral_history may be empty
       }
     };
     fetchReferrals();
   }, [user]);
 
   const referralCode = profile?.referralCode || 'BIX-XXXXXX';
-  const referralLink = `${window.location.origin}/join?ref=${referralCode}`;
+  const referralLink = `${window.location.origin}?ref=${referralCode}`;
 
   const copyToClipboard = () => {
     setIsCopying(true);
@@ -43,13 +44,36 @@ export default function ReferralsPage() {
     setTimeout(() => setIsCopying(false), 2000);
   };
 
+  const shareLink = async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'Join BixGain - Earn Crypto Rewards',
+          text: `Join BixGain using my referral link and get 50 BIX free!`,
+          url: referralLink,
+        });
+      } catch {
+        copyToClipboard();
+      }
+    } else {
+      copyToClipboard();
+    }
+  };
+
+  const milestones = [
+    { count: 1, reward: 100, label: 'First Referral' },
+    { count: 5, reward: 500, label: '5 Referrals' },
+    { count: 25, reward: 2500, label: '25 Referrals' },
+    { count: 50, reward: 5000, label: 'Influencer' },
+  ];
+
   return (
     <DashboardLayout activePath="/referrals">
       <div className="space-y-8">
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
           <div>
             <h1 className="text-4xl font-display font-bold mb-2">Referral Program</h1>
-            <p className="text-muted-foreground">Invite your friends to BixGain and earn 10% of their mining rewards forever.</p>
+            <p className="text-muted-foreground">Invite your friends to BixGain and earn 100 BIX per referral.</p>
           </div>
           <div className="flex items-center gap-4 bg-primary/10 px-6 py-3 rounded-2xl border border-primary/20 gold-glow">
             <div className="text-right">
@@ -75,30 +99,39 @@ export default function ReferralsPage() {
                     value={referralLink} 
                     className="h-12 bg-muted/50 border-white/10 font-mono text-xs"
                   />
-                  <Button 
-                    className="h-12 px-8 gold-gradient font-bold gap-2"
-                    onClick={copyToClipboard}
-                  >
-                    {isCopying ? <Zap className="h-4 w-4 animate-bounce" /> : <Copy className="h-4 w-4" />}
-                    {isCopying ? 'COPIED!' : 'COPY LINK'}
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button 
+                      className="h-12 px-8 gold-gradient font-bold gap-2"
+                      onClick={copyToClipboard}
+                    >
+                      {isCopying ? <Zap className="h-4 w-4 animate-bounce" /> : <Copy className="h-4 w-4" />}
+                      {isCopying ? 'COPIED!' : 'COPY'}
+                    </Button>
+                    <Button 
+                      variant="outline"
+                      className="h-12 px-6 border-primary/30 text-primary hover:bg-primary/10 gap-2"
+                      onClick={shareLink}
+                    >
+                      <Share2 className="h-4 w-4" /> Share
+                    </Button>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="p-4 rounded-xl bg-white/5 border border-white/5 text-center">
                     <TrendingUp className="h-6 w-6 text-primary mx-auto mb-2" />
-                    <p className="text-xs text-muted-foreground mb-1">Referral Reward</p>
+                    <p className="text-xs text-muted-foreground mb-1">Referrer Reward</p>
                     <p className="font-bold">100 BIX</p>
                   </div>
                   <div className="p-4 rounded-xl bg-white/5 border border-white/5 text-center">
                     <Gift className="h-6 w-6 text-primary mx-auto mb-2" />
-                    <p className="text-xs text-muted-foreground mb-1">Lifetime Bonus</p>
-                    <p className="font-bold">10% Rev Share</p>
+                    <p className="text-xs text-muted-foreground mb-1">New User Bonus</p>
+                    <p className="font-bold">50 BIX</p>
                   </div>
                   <div className="p-4 rounded-xl bg-white/5 border border-white/5 text-center">
-                    <Users className="h-6 w-6 text-primary mx-auto mb-2" />
-                    <p className="text-xs text-muted-foreground mb-1">Miners Invited</p>
-                    <p className="font-bold">{referralCount} / 50</p>
+                    <ShieldCheck className="h-6 w-6 text-primary mx-auto mb-2" />
+                    <p className="text-xs text-muted-foreground mb-1">Anti-Fraud</p>
+                    <p className="font-bold">Protected</p>
                   </div>
                 </div>
               </CardContent>
@@ -142,20 +175,29 @@ export default function ReferralsPage() {
             <Card className="gold-gradient border-none text-background relative overflow-hidden">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <Share2 className="h-5 w-5" />
-                  Incentives
+                  <TrendingUp className="h-5 w-5" />
+                  Milestones
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="p-4 rounded-xl bg-white/20 backdrop-blur-md">
-                  <h4 className="font-bold mb-1">Reach 50 Referrals</h4>
-                  <p className="text-sm opacity-90 mb-3">Unlock the "BixGain Influencer" badge and 2x daily login rewards.</p>
-                  <div className="w-full h-2 bg-background/20 rounded-full overflow-hidden">
-                    <div className="h-full bg-background" style={{ width: `${Math.min((referralCount / 50) * 100, 100)}%` }} />
-                  </div>
-                  <p className="text-[10px] mt-2 font-bold opacity-70">{referralCount} / 50 COMPLETED</p>
-                </div>
-                <Button className="w-full bg-background text-primary hover:bg-background/90 font-bold">Claim Milestone</Button>
+              <CardContent className="space-y-3">
+                {milestones.map(m => {
+                  const reached = referralCount >= m.count;
+                  return (
+                    <div key={m.count} className={`p-3 rounded-xl ${reached ? 'bg-white/30' : 'bg-white/10'} backdrop-blur-md`}>
+                      <div className="flex items-center justify-between mb-1">
+                        <h4 className="font-bold text-sm flex items-center gap-2">
+                          {reached && <CheckCircle2 className="h-4 w-4" />}
+                          {m.label}
+                        </h4>
+                        <span className="text-xs font-bold">+{m.reward} BIX</span>
+                      </div>
+                      <div className="w-full h-1.5 bg-background/20 rounded-full overflow-hidden">
+                        <div className="h-full bg-background transition-all" style={{ width: `${Math.min((referralCount / m.count) * 100, 100)}%` }} />
+                      </div>
+                      <p className="text-[10px] mt-1 font-bold opacity-70">{Math.min(referralCount, m.count)} / {m.count}</p>
+                    </div>
+                  );
+                })}
               </CardContent>
             </Card>
 
@@ -170,11 +212,15 @@ export default function ReferralsPage() {
                 </div>
                 <div className="flex gap-3">
                   <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-primary text-xs font-bold shrink-0">2</div>
-                  <p>Your friend signs up and completes their first task.</p>
+                  <p>Your friend signs up via your link.</p>
                 </div>
                 <div className="flex gap-3">
                   <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-primary text-xs font-bold shrink-0">3</div>
-                  <p>You instantly receive 100 BIX and 10% lifetime commission.</p>
+                  <p>You receive <span className="text-primary font-bold">100 BIX</span> and they get <span className="text-primary font-bold">50 BIX</span> instantly.</p>
+                </div>
+                <div className="flex gap-3">
+                  <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-primary text-xs font-bold shrink-0">4</div>
+                  <p>All rewards processed via secure Reward Engine — no manipulation possible.</p>
                 </div>
               </CardContent>
             </Card>

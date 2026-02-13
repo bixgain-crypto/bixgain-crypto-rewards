@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { blink } from '../lib/blink';
 import { useAuth } from '../hooks/use-auth';
+import { rewardEngine } from '../lib/reward-engine';
 import { DashboardLayout } from '../components/dashboard-layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -28,39 +28,29 @@ export default function CoinFlipPage() {
     setResult(null);
     setWon(null);
 
-    setTimeout(async () => {
-      try {
-        const flipResult: CoinSide = Math.random() > 0.5 ? 'heads' : 'tails';
-        const isWin = flipResult === choice;
-        const netChange = isWin ? betAmount : -betAmount;
+    // Visual delay for flip animation
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    
+    try {
+      const gameResult = await rewardEngine.gameResult('coinflip', betAmount, choice);
+      const isWin = gameResult.multiplier > 0;
+      const flipResult: CoinSide = isWin ? choice : (choice === 'heads' ? 'tails' : 'heads');
 
-        setResult(flipResult);
-        setWon(isWin);
+      setResult(flipResult);
+      setWon(isWin);
 
-        await blink.db.userProfiles.update(user.id, {
-          balance: profile.balance + netChange,
-        });
-
-        await blink.db.transactions.create({
-          userId: user.id,
-          amount: netChange,
-          type: 'game',
-          description: `Coin Flip (${isWin ? 'WIN' : 'LOSS'}) - Chose ${choice}, got ${flipResult}`,
-        });
-
-        if (isWin) {
-          toast.success(`You won ${betAmount} BIX! The coin landed on ${flipResult}!`);
-        } else {
-          toast.error(`You lost ${betAmount} BIX. The coin landed on ${flipResult}.`);
-        }
-
-        refreshProfile();
-      } catch {
-        toast.error('Game error occurred.');
-      } finally {
-        setIsFlipping(false);
+      if (isWin) {
+        toast.success(`You won ${betAmount} BIX! The coin landed on ${flipResult}!`);
+      } else {
+        toast.error(`You lost ${betAmount} BIX. The coin landed on ${flipResult}.`);
       }
-    }, 1500);
+
+      refreshProfile();
+    } catch (err: any) {
+      toast.error(err.message || 'Game error occurred.');
+    } finally {
+      setIsFlipping(false);
+    }
   };
 
   return (

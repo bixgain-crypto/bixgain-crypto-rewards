@@ -34,6 +34,7 @@ function App() {
   }
 
   if (!isAuthenticated) {
+    // Show landing page for unauthenticated users (referral params preserved via login())
     return <LandingPage />;
   }
 
