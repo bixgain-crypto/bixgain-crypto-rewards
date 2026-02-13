@@ -25,8 +25,20 @@ export default function QuestsPage() {
   const { profile, user, refreshProfile } = useAuth();
   const [tasks, setTasks] = useState<any[]>([]);
   const [completedTaskIds, setCompletedTaskIds] = useState<Set<string>>(new Set());
+  const [verifyingTaskIds, setVerifyingTaskIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [claimingTask, setClaimingTask] = useState<string | null>(null);
+
+  useEffect(() => {
+    const stored = localStorage.getItem('bix_verifying_tasks');
+    if (stored) {
+      try {
+        setVerifyingTaskIds(new Set(JSON.parse(stored)));
+      } catch (e) {
+        console.error('Failed to parse verifying tasks');
+      }
+    }
+  }, []);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -53,12 +65,36 @@ export default function QuestsPage() {
       return;
     }
 
+    const isVerifying = verifyingTaskIds.has(task.id);
+
+    if (!isVerifying && task.link) {
+      // Step 1: Redirect to task
+      window.open(task.link, '_blank');
+      const newVerifying = new Set([...verifyingTaskIds, task.id]);
+      setVerifyingTaskIds(newVerifying);
+      localStorage.setItem('bix_verifying_tasks', JSON.stringify([...newVerifying]));
+      toast.info('Finish the action and click Verify to claim rewards.');
+      return;
+    }
+
+    // Step 2: Verify and Claim
     setClaimingTask(task.id);
     try {
-      // Open link if it's a social/watch task
-      if (task.link) window.open(task.link, '_blank');
+      // Simulate authentic verification
+      if (isVerifying) {
+        await new Promise(resolve => setTimeout(resolve, 2500));
+      }
 
       const result = await rewardEngine.completeTask(task.id);
+      
+      // Cleanup verification state if it was there
+      if (isVerifying) {
+        const newVerifying = new Set([...verifyingTaskIds]);
+        newVerifying.delete(task.id);
+        setVerifyingTaskIds(newVerifying);
+        localStorage.setItem('bix_verifying_tasks', JSON.stringify([...newVerifying]));
+      }
+
       setCompletedTaskIds(prev => new Set([...prev, task.id]));
       toast.success(`${result.message} (+${result.xp} XP)`);
       refreshProfile();
@@ -77,6 +113,7 @@ export default function QuestsPage() {
 
   const renderTask = (task: any) => {
     const isCompleted = completedTaskIds.has(task.id);
+    const isVerifying = verifyingTaskIds.has(task.id);
     const isClaiming = claimingTask === task.id;
     const isLocked = task.requiredLevel && userLevel < task.requiredLevel;
     const IconComponent = CATEGORY_ICONS[task.category] || Zap;
@@ -121,11 +158,22 @@ export default function QuestsPage() {
               </Button>
             ) : (
               <Button
-                className="gold-gradient gold-glow font-bold px-8 h-12"
+                className={`${isVerifying ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30 hover:bg-orange-500/30' : 'gold-gradient gold-glow'} font-bold px-8 h-12 transition-all min-w-[140px]`}
                 onClick={() => handleCompleteTask(task)}
                 disabled={isClaiming}
               >
-                {isClaiming ? 'Verifying...' : 'Claim'}
+                {isClaiming ? (
+                  <span className="flex items-center gap-2">
+                    <span className="w-4 h-4 rounded-full border-2 border-current border-t-transparent animate-spin" />
+                    Checking...
+                  </span>
+                ) : isVerifying ? (
+                  'Verify'
+                ) : task.link ? (
+                  'Go'
+                ) : (
+                  'Claim'
+                )}
               </Button>
             )}
           </div>
