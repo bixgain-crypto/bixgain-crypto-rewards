@@ -99,6 +99,25 @@ export const rewardEngine = {
   adminResolveFlag: (flagId: string) =>
     callRewardEngine('admin_resolve_flag', { flagId }),
 
+  // ===== Admin: User & Task Management (bypasses RLS) =====
+  adminListUsers: () =>
+    callRewardEngine('admin_list_users'),
+
+  adminListAllTasks: () =>
+    callRewardEngine('admin_list_all_tasks'),
+
+  adminCreateTask: (task: { title: string; description?: string; category?: string; taskType?: string; rewardAmount?: number; xpReward?: number; requiredLevel?: number; link?: string }) =>
+    callRewardEngine('admin_create_task', task),
+
+  adminToggleTask: (taskId: string, isActive: boolean) =>
+    callRewardEngine('admin_toggle_task', { taskId, isActive }),
+
+  adminDeleteTask: (taskId: string) =>
+    callRewardEngine('admin_delete_task', { taskId }),
+
+  adminSetUserRole: (targetUserId: string, role: string) =>
+    callRewardEngine('admin_set_user_role', { targetUserId, role }),
+
   // Legacy compat
   verifyRewardCode: (code: string) =>
     callRewardEngine('redeem_task_code', { code }),

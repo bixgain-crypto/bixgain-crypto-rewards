@@ -290,6 +290,18 @@ async function handler(req: Request): Promise<Response> {
         return await adminGetAbuseFlags(blink, userId);
       case "admin_resolve_flag":
         return await adminResolveFlag(blink, userId, body);
+      case "admin_list_users":
+        return await adminListUsers(blink, userId);
+      case "admin_list_all_tasks":
+        return await adminListAllTasks(blink, userId);
+      case "admin_create_task":
+        return await adminCreateTask(blink, userId, body);
+      case "admin_toggle_task":
+        return await adminToggleTask(blink, userId, body);
+      case "admin_delete_task":
+        return await adminDeleteTask(blink, userId, body);
+      case "admin_set_user_role":
+        return await adminSetUserRole(blink, userId, body);
       case "get_pending_rewards":
         return await getPendingRewards(blink, userId);
       // Legacy compat
@@ -309,7 +321,14 @@ async function handler(req: Request): Promise<Response> {
 // ===================== ADMIN CHECK =====================
 async function verifyAdmin(blink: any, userId: string): Promise<boolean> {
   const profiles = await blink.db.table("user_profiles").list({ where: { userId }, limit: 1 });
-  return profiles.length > 0 && profiles[0].role === "admin";
+  if (profiles.length === 0) return false;
+  return profiles[0].role === "admin" || profiles[0].role === "moderator";
+}
+
+async function verifyAdminOnly(blink: any, userId: string): Promise<boolean> {
+  const profiles = await blink.db.table("user_profiles").list({ where: { userId }, limit: 1 });
+  if (profiles.length === 0) return false;
+  return profiles[0].role === "admin";
 }
 
 // ===================== TASK CODE WINDOW SYSTEM =====================
@@ -1364,6 +1383,107 @@ async function adminResolveFlag(blink: any, userId: string, body: any) {
   });
 
   return jsonResponse({ success: true, message: "Flag resolved" });
+}
+
+// ===================== ADMIN: USER & TASK MANAGEMENT =====================
+
+async function adminListUsers(blink: any, userId: string) {
+  if (!(await verifyAdmin(blink, userId))) {
+    return errorResponse("Admin access required", 403);
+  }
+
+  const users = await blink.db.table("user_profiles").list({
+    orderBy: { balance: "desc" },
+    limit: 100,
+  });
+
+  return jsonResponse({ success: true, users });
+}
+
+async function adminListAllTasks(blink: any, userId: string) {
+  if (!(await verifyAdmin(blink, userId))) {
+    return errorResponse("Admin access required", 403);
+  }
+
+  const tasks = await blink.db.table("tasks").list({
+    orderBy: { createdAt: "desc" },
+    limit: 100,
+  });
+
+  return jsonResponse({ success: true, tasks });
+}
+
+async function adminCreateTask(blink: any, userId: string, body: any) {
+  if (!(await verifyAdmin(blink, userId))) {
+    return errorResponse("Admin access required", 403);
+  }
+
+  const { title, description, category, taskType, rewardAmount, xpReward, requiredLevel, link } = body;
+  if (!title) return errorResponse("Title is required");
+
+  const taskId = `task_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  const task = await blink.db.table("tasks").create({
+    id: taskId,
+    title,
+    description: description || "",
+    category: category || "social",
+    taskType: taskType || "one-time",
+    rewardAmount: rewardAmount || 100,
+    xpReward: xpReward || 50,
+    requiredLevel: requiredLevel || 0,
+    link: link || "",
+    isActive: 1,
+  });
+
+  return jsonResponse({ success: true, task, message: "Task created successfully" });
+}
+
+async function adminToggleTask(blink: any, userId: string, body: any) {
+  if (!(await verifyAdmin(blink, userId))) {
+    return errorResponse("Admin access required", 403);
+  }
+
+  const { taskId, isActive } = body;
+  if (!taskId) return errorResponse("Missing taskId");
+
+  await blink.db.table("tasks").update(taskId, { isActive: isActive ? 1 : 0 });
+
+  return jsonResponse({ success: true, message: `Task ${isActive ? "activated" : "deactivated"}` });
+}
+
+async function adminDeleteTask(blink: any, userId: string, body: any) {
+  if (!(await verifyAdmin(blink, userId))) {
+    return errorResponse("Admin access required", 403);
+  }
+
+  const { taskId } = body;
+  if (!taskId) return errorResponse("Missing taskId");
+
+  await blink.db.table("tasks").delete(taskId);
+
+  return jsonResponse({ success: true, message: "Task deleted" });
+}
+
+async function adminSetUserRole(blink: any, userId: string, body: any) {
+  // Only full admins can change roles (not moderators)
+  if (!(await verifyAdminOnly(blink, userId))) {
+    return errorResponse("Full admin access required to change roles", 403);
+  }
+
+  const { targetUserId, role } = body;
+  if (!targetUserId || !role) return errorResponse("Missing targetUserId or role");
+  if (!["admin", "user", "moderator"].includes(role)) {
+    return errorResponse("Invalid role. Must be: admin, user, or moderator");
+  }
+
+  // Prevent removing own admin role
+  if (targetUserId === userId && role !== "admin") {
+    return errorResponse("Cannot remove your own admin role");
+  }
+
+  await blink.db.table("user_profiles").update(targetUserId, { role });
+
+  return jsonResponse({ success: true, message: `User role updated to ${role}` });
 }
 
 Deno.serve(handler);

@@ -7,6 +7,7 @@ interface AuthContextType {
   user: BlinkUser | null;
   profile: any | null;
   isAuthenticated: boolean;
+  isAdmin: boolean;
   isLoading: boolean;
   login: (redirectUrl?: string) => void;
   logout: () => Promise<void>;
@@ -14,6 +15,15 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+// Admin emails that are always elevated to admin role
+const ADMIN_EMAILS = ['bixgain@gmail.com'];
+
+function isAdminUser(user: BlinkUser | null, profile: any | null): boolean {
+  if (profile?.role === 'admin') return true;
+  if (user?.email && ADMIN_EMAILS.includes(user.email)) return true;
+  return false;
+}
 
 // Extract referral code from URL (supports both /join?ref= and ?ref=)
 function getReferralCodeFromURL(): string | null {
@@ -53,8 +63,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (existingProfile) {
         setProfile(existingProfile);
 
-        // Ensure bixgain@gmail.com is admin if they somehow already have a profile but not the role
-        if (blinkUser.email === 'bixgain@gmail.com' && existingProfile.role !== 'admin') {
+        // Auto-elevate admin emails if they have a profile but not the admin role
+        if (blinkUser.email && ADMIN_EMAILS.includes(blinkUser.email) && existingProfile.role !== 'admin') {
           try {
             await blink.db.table('user_profiles').update(existingProfile.id, { role: 'admin' });
             setProfile({ ...existingProfile, role: 'admin' });
@@ -82,7 +92,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         // Create profile for new user
         const referralCode = `BIX-${blinkUser.id.slice(-6).toUpperCase()}`;
-        const isAdmin = blinkUser.email === 'bixgain@gmail.com';
+        const isAdmin = blinkUser.email ? ADMIN_EMAILS.includes(blinkUser.email) : false;
         
         const newProfile = await blink.db.table('user_profiles').create({
           userId: blinkUser.id,
@@ -159,7 +169,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, profile, isAuthenticated: !!user, isLoading, login, logout, refreshProfile }}>
+    <AuthContext.Provider value={{ user, profile, isAuthenticated: !!user, isAdmin: isAdminUser(user, profile), isLoading, login, logout, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );
