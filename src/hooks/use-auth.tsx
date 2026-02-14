@@ -85,7 +85,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const isAdmin = blinkUser.email === 'bixgain@gmail.com';
         
         const newProfile = await blink.db.table('user_profiles').create({
-          id: blinkUser.id,
           userId: blinkUser.id,
           displayName: blinkUser.displayName || 'Miner',
           referralCode,

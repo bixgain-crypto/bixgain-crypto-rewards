@@ -82,8 +82,9 @@ function calculateLevel(xp: number): number {
 
 // Helper to update user profile with XP and balance, handling level ups
 async function updateUserBalanceAndXP(blink: any, userId: string, data: { balanceChange: number; earnedChange: number; xpChange: number }) {
-  const profile = await blink.db.table("user_profiles").get(userId);
-  if (!profile) return null;
+  const profiles = await blink.db.table("user_profiles").list({ where: { userId }, limit: 1 });
+  if (profiles.length === 0) return null;
+  const profile = profiles[0];
 
   const newXP = (profile.xp || 0) + data.xpChange;
   const newLevel = calculateLevel(newXP);
@@ -307,8 +308,8 @@ async function handler(req: Request): Promise<Response> {
 
 // ===================== ADMIN CHECK =====================
 async function verifyAdmin(blink: any, userId: string): Promise<boolean> {
-  const profile = await blink.db.table("user_profiles").get(userId);
-  return profile?.role === "admin";
+  const profiles = await blink.db.table("user_profiles").list({ where: { userId }, limit: 1 });
+  return profiles.length > 0 && profiles[0].role === "admin";
 }
 
 // ===================== TASK CODE WINDOW SYSTEM =====================
@@ -577,9 +578,10 @@ async function redeemTaskCode(
 
 async function processReferralCommission(blink: any, userId: string, earnedAmount: number, sourceId: string) {
   try {
-    const profile = await blink.db.table("user_profiles").get(userId);
-    if (!profile?.referredBy) return; // No referrer
+    const profiles = await blink.db.table("user_profiles").list({ where: { userId }, limit: 1 });
+    if (profiles.length === 0 || !profiles[0].referredBy) return; // No profile or no referrer
 
+    const profile = profiles[0];
     const referrerId = profile.referredBy;
 
     // Check referral qualification: referred user must have completed 2+ tasks
