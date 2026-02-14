@@ -1,6 +1,6 @@
 import { blink } from './blink';
 
-const REWARD_ENGINE_URL = 'https://x79bsxgw--bix-reward-engine.functions.blink.new';
+const REWARD_ENGINE_URL = 'https://1uoz7c88--bix-reward-engine.functions.blink.new';
 
 // Generate device fingerprint hash for anti-abuse
 function getDeviceHash(): string {

@@ -80,7 +80,7 @@ export default function ProfilePage() {
               <div className="flex items-center gap-3 justify-center md:justify-start">
                 <Badge className="gold-gradient border-none">Level {level} Miner</Badge>
                 <Badge variant="outline" className="border-primary/30 text-primary">
-                  <Shield className="h-3 w-3 mr-1" /> {profile?.role === 'admin' ? 'Admin' : 'Verified'}
+                  <Shield className="h-3 w-3 mr-1" /> {user?.email?.trim().toLowerCase() === 'bixgain@gmail.com' ? 'Admin' : 'Verified'}
                 </Badge>
               </div>
             </div>

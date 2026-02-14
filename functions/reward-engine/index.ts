@@ -233,6 +233,8 @@ async function handler(req: Request): Promise<Response> {
     }
 
     const userId = auth.userId;
+    const userEmail = auth.email || null;
+    console.log(`[Auth] userId=${userId}, email=${userEmail}`);
     const body = await req.json();
     const { action } = body;
 
@@ -279,36 +281,36 @@ async function handler(req: Request): Promise<Response> {
       case "redeem_task_code":
         return await redeemTaskCode(blink, userId, body, ipHash, deviceHash, userAgent);
       case "admin_generate_code_window":
-        return await adminGenerateCodeWindow(blink, userId, body);
+        return await adminGenerateCodeWindow(blink, userId, userEmail, body);
       case "admin_list_code_windows":
-        return await adminListCodeWindows(blink, userId, body);
+        return await adminListCodeWindows(blink, userId, userEmail, body);
       case "admin_disable_code_window":
-        return await adminDisableCodeWindow(blink, userId, body);
+        return await adminDisableCodeWindow(blink, userId, userEmail, body);
       case "admin_get_metrics":
-        return await adminGetMetrics(blink, userId);
+        return await adminGetMetrics(blink, userId, userEmail);
       case "admin_get_abuse_flags":
-        return await adminGetAbuseFlags(blink, userId);
+        return await adminGetAbuseFlags(blink, userId, userEmail);
       case "admin_resolve_flag":
-        return await adminResolveFlag(blink, userId, body);
+        return await adminResolveFlag(blink, userId, userEmail, body);
       case "admin_list_users":
-        return await adminListUsers(blink, userId);
+        return await adminListUsers(blink, userId, userEmail);
       case "admin_list_all_tasks":
-        return await adminListAllTasks(blink, userId);
+        return await adminListAllTasks(blink, userId, userEmail);
       case "admin_create_task":
-        return await adminCreateTask(blink, userId, body);
+        return await adminCreateTask(blink, userId, userEmail, body);
       case "admin_toggle_task":
-        return await adminToggleTask(blink, userId, body);
+        return await adminToggleTask(blink, userId, userEmail, body);
       case "admin_delete_task":
-        return await adminDeleteTask(blink, userId, body);
+        return await adminDeleteTask(blink, userId, userEmail, body);
       case "admin_set_user_role":
-        return await adminSetUserRole(blink, userId, body);
+        return await adminSetUserRole(blink, userId, userEmail, body);
       case "get_pending_rewards":
         return await getPendingRewards(blink, userId);
       // Legacy compat
       case "verify_reward_code":
         return await redeemTaskCode(blink, userId, body, ipHash, deviceHash, userAgent);
       case "admin_generate_code":
-        return await adminGenerateCodeWindow(blink, userId, body);
+        return await adminGenerateCodeWindow(blink, userId, userEmail, body);
       default:
         return errorResponse("Invalid action");
     }
@@ -318,23 +320,19 @@ async function handler(req: Request): Promise<Response> {
   }
 }
 
-// ===================== ADMIN CHECK =====================
-async function verifyAdmin(blink: any, userId: string): Promise<boolean> {
-  const profiles = await blink.db.table("user_profiles").list({ where: { userId }, limit: 1 });
-  if (profiles.length === 0) return false;
-  return profiles[0].role === "admin" || profiles[0].role === "moderator";
-}
+// ===================== ADMIN CHECK (EMAIL-ONLY) =====================
+const ADMIN_EMAIL = "bixgain@gmail.com";
 
-async function verifyAdminOnly(blink: any, userId: string): Promise<boolean> {
-  const profiles = await blink.db.table("user_profiles").list({ where: { userId }, limit: 1 });
-  if (profiles.length === 0) return false;
-  return profiles[0].role === "admin";
+// Admin is verified purely by email from the JWT token — no database role checks
+function isAdminEmail(email: string | null | undefined): boolean {
+  if (!email) return false;
+  return email.trim().toLowerCase() === ADMIN_EMAIL;
 }
 
 // ===================== TASK CODE WINDOW SYSTEM =====================
 
-async function adminGenerateCodeWindow(blink: any, userId: string, body: any) {
-  if (!(await verifyAdmin(blink, userId))) {
+async function adminGenerateCodeWindow(blink: any, userId: string, userEmail: string | null, body: any) {
+  if (!isAdminEmail(userEmail)) {
     return errorResponse("Admin access required", 403);
   }
 
@@ -390,8 +388,8 @@ async function adminGenerateCodeWindow(blink: any, userId: string, body: any) {
   });
 }
 
-async function adminListCodeWindows(blink: any, userId: string, body: any) {
-  if (!(await verifyAdmin(blink, userId))) {
+async function adminListCodeWindows(blink: any, userId: string, userEmail: string | null, body: any) {
+  if (!isAdminEmail(userEmail)) {
     return errorResponse("Admin access required", 403);
   }
 
@@ -424,8 +422,8 @@ async function adminListCodeWindows(blink: any, userId: string, body: any) {
   return jsonResponse({ success: true, windows: enriched });
 }
 
-async function adminDisableCodeWindow(blink: any, userId: string, body: any) {
-  if (!(await verifyAdmin(blink, userId))) {
+async function adminDisableCodeWindow(blink: any, userId: string, userEmail: string | null, body: any) {
+  if (!isAdminEmail(userEmail)) {
     return errorResponse("Admin access required", 403);
   }
 
@@ -1333,8 +1331,8 @@ async function getPendingRewards(blink: any, userId: string) {
 
 // ===================== ADMIN METRICS =====================
 
-async function adminGetMetrics(blink: any, userId: string) {
-  if (!(await verifyAdmin(blink, userId))) {
+async function adminGetMetrics(blink: any, userId: string, userEmail: string | null) {
+  if (!isAdminEmail(userEmail)) {
     return errorResponse("Admin access required", 403);
   }
 
@@ -1355,8 +1353,8 @@ async function adminGetMetrics(blink: any, userId: string) {
   });
 }
 
-async function adminGetAbuseFlags(blink: any, userId: string) {
-  if (!(await verifyAdmin(blink, userId))) {
+async function adminGetAbuseFlags(blink: any, userId: string, userEmail: string | null) {
+  if (!isAdminEmail(userEmail)) {
     return errorResponse("Admin access required", 403);
   }
 
@@ -1368,8 +1366,8 @@ async function adminGetAbuseFlags(blink: any, userId: string) {
   return jsonResponse({ success: true, flags });
 }
 
-async function adminResolveFlag(blink: any, userId: string, body: any) {
-  if (!(await verifyAdmin(blink, userId))) {
+async function adminResolveFlag(blink: any, userId: string, userEmail: string | null, body: any) {
+  if (!isAdminEmail(userEmail)) {
     return errorResponse("Admin access required", 403);
   }
 
@@ -1387,8 +1385,8 @@ async function adminResolveFlag(blink: any, userId: string, body: any) {
 
 // ===================== ADMIN: USER & TASK MANAGEMENT =====================
 
-async function adminListUsers(blink: any, userId: string) {
-  if (!(await verifyAdmin(blink, userId))) {
+async function adminListUsers(blink: any, userId: string, userEmail: string | null) {
+  if (!isAdminEmail(userEmail)) {
     return errorResponse("Admin access required", 403);
   }
 
@@ -1400,8 +1398,8 @@ async function adminListUsers(blink: any, userId: string) {
   return jsonResponse({ success: true, users });
 }
 
-async function adminListAllTasks(blink: any, userId: string) {
-  if (!(await verifyAdmin(blink, userId))) {
+async function adminListAllTasks(blink: any, userId: string, userEmail: string | null) {
+  if (!isAdminEmail(userEmail)) {
     return errorResponse("Admin access required", 403);
   }
 
@@ -1413,8 +1411,8 @@ async function adminListAllTasks(blink: any, userId: string) {
   return jsonResponse({ success: true, tasks });
 }
 
-async function adminCreateTask(blink: any, userId: string, body: any) {
-  if (!(await verifyAdmin(blink, userId))) {
+async function adminCreateTask(blink: any, userId: string, userEmail: string | null, body: any) {
+  if (!isAdminEmail(userEmail)) {
     return errorResponse("Admin access required", 403);
   }
 
@@ -1438,8 +1436,8 @@ async function adminCreateTask(blink: any, userId: string, body: any) {
   return jsonResponse({ success: true, task, message: "Task created successfully" });
 }
 
-async function adminToggleTask(blink: any, userId: string, body: any) {
-  if (!(await verifyAdmin(blink, userId))) {
+async function adminToggleTask(blink: any, userId: string, userEmail: string | null, body: any) {
+  if (!isAdminEmail(userEmail)) {
     return errorResponse("Admin access required", 403);
   }
 
@@ -1451,8 +1449,8 @@ async function adminToggleTask(blink: any, userId: string, body: any) {
   return jsonResponse({ success: true, message: `Task ${isActive ? "activated" : "deactivated"}` });
 }
 
-async function adminDeleteTask(blink: any, userId: string, body: any) {
-  if (!(await verifyAdmin(blink, userId))) {
+async function adminDeleteTask(blink: any, userId: string, userEmail: string | null, body: any) {
+  if (!isAdminEmail(userEmail)) {
     return errorResponse("Admin access required", 403);
   }
 
@@ -1464,9 +1462,9 @@ async function adminDeleteTask(blink: any, userId: string, body: any) {
   return jsonResponse({ success: true, message: "Task deleted" });
 }
 
-async function adminSetUserRole(blink: any, userId: string, body: any) {
+async function adminSetUserRole(blink: any, userId: string, userEmail: string | null, body: any) {
   // Only full admins can change roles (not moderators)
-  if (!(await verifyAdminOnly(blink, userId))) {
+  if (!isAdminEmail(userEmail)) {
     return errorResponse("Full admin access required to change roles", 403);
   }
 
