@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { blink } from '../lib/blink';
 import { useAuth } from '../hooks/use-auth';
+import { fetchSharedData } from '../lib/shared-data';
 import { DashboardLayout } from '../components/dashboard-layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -19,14 +19,12 @@ export default function ReferralsPage() {
     const fetchReferrals = async () => {
       if (!user) return;
       try {
-        // Use user's own referral history (RLS filters to their records)
-        const history = await blink.db.table('referral_history').list({
-          where: { referrerId: user.id },
-          orderBy: { createdAt: 'desc' },
-          limit: 20,
-        });
-        setReferralHistory(history);
-        setReferralCount(history.length);
+        // Use shared-data edge function (service-role) to fetch referral history
+        // RLS owner mode blocks direct reads since referral_history user_id doesn't match referrer
+        const allHistory = await fetchSharedData('referral_history');
+        const myReferrals = (allHistory || []).filter((r: any) => r.referrerId === user.id);
+        setReferralHistory(myReferrals);
+        setReferralCount(myReferrals.length);
       } catch {
         // referral_history may be empty
       }
@@ -61,10 +59,10 @@ export default function ReferralsPage() {
   };
 
   const milestones = [
-    { count: 1, reward: 500, label: 'First Referral' },
-    { count: 5, reward: 5000, label: '5 Referrals' },
-    { count: 25, reward: 50000, label: '25 Referrals' },
-    { count: 50, reward: 150000, label: 'Influencer' },
+    { count: 1, reward: 100, label: 'First Referral' },
+    { count: 5, reward: 500, label: '5 Referrals' },
+    { count: 25, reward: 2500, label: '25 Referrals' },
+    { count: 50, reward: 5000, label: 'Influencer' },
   ];
 
   return (

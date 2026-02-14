@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { blink } from '../lib/blink';
 import { useAuth } from '../hooks/use-auth';
 import { fetchSharedData } from '../lib/shared-data';
-import { rewardEngine } from '../lib/reward-engine';
 import { DashboardLayout } from '../components/dashboard-layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -22,7 +21,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "../components/ui/dialog";
-import { Settings, Users, Database, ShieldAlert, Plus, CheckCircle, XCircle, Key, BarChart3, AlertTriangle, Clock, Copy, Trash2 } from 'lucide-react';
+import { Users, Database, ShieldAlert, Plus, CheckCircle, XCircle, Key, BarChart3, AlertTriangle, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import AdminCodeManager from '../components/admin-code-manager';
 import AdminMetrics from '../components/admin-metrics';
@@ -39,7 +38,7 @@ export default function AdminPanel() {
     title: '',
     description: '',
     category: 'social',
-    taskType: 'one-time',
+    taskType: 'one_time',
     rewardAmount: 100,
     xpReward: 50,
     requiredLevel: 0,
@@ -50,12 +49,13 @@ export default function AdminPanel() {
 
   const fetchData = async () => {
     try {
+      // Use shared-data edge function (service-role) to bypass RLS for admin reads
       const [userList, taskList] = await Promise.all([
-        blink.db.userProfiles.list({ limit: 50, orderBy: { balance: 'desc' } }),
-        blink.db.tasks.list({ orderBy: { createdAt: 'desc' } }),
+        fetchSharedData('user_profiles', 50),
+        fetchSharedData('tasks', undefined, { includeAll: true }),
       ]);
-      setUsers(userList);
-      setTasks(taskList);
+      setUsers(userList || []);
+      setTasks(taskList || []);
     } catch (err) {
       console.error('Error fetching admin data:', err);
     } finally {
@@ -75,9 +75,10 @@ export default function AdminPanel() {
 
     setCreatingTask(true);
     try {
-      await blink.db.tasks.create({
+      await blink.db.table('tasks').create({
         ...newTask,
         isActive: 1,
+        userId: 'system',
       });
       toast.success('Task created successfully');
       setIsCreateDialogOpen(false);
@@ -85,7 +86,7 @@ export default function AdminPanel() {
         title: '',
         description: '',
         category: 'social',
-        taskType: 'one-time',
+        taskType: 'one_time',
         rewardAmount: 100,
         xpReward: 50,
         requiredLevel: 0,
@@ -101,7 +102,7 @@ export default function AdminPanel() {
 
   const handleToggleTaskStatus = async (taskId: string, currentStatus: number) => {
     try {
-      await blink.db.tasks.update(taskId, { isActive: currentStatus > 0 ? 0 : 1 });
+      await blink.db.table('tasks').update(taskId, { isActive: currentStatus > 0 ? 0 : 1 });
       toast.success('Task status updated');
       fetchData();
     } catch (err: any) {
@@ -112,7 +113,7 @@ export default function AdminPanel() {
   const handleDeleteTask = async (taskId: string) => {
     if (!confirm('Are you sure you want to delete this task?')) return;
     try {
-      await blink.db.tasks.delete(taskId);
+      await blink.db.table('tasks').delete(taskId);
       toast.success('Task deleted');
       fetchData();
     } catch (err: any) {
@@ -269,7 +270,7 @@ export default function AdminPanel() {
                               <SelectValue placeholder="Select type" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="one-time">One-time</SelectItem>
+                              <SelectItem value="one_time">One-time</SelectItem>
                               <SelectItem value="daily">Daily</SelectItem>
                               <SelectItem value="recursive">Recursive</SelectItem>
                             </SelectContent>

@@ -63,7 +63,7 @@ export default function StorePage() {
             <p className="text-muted-foreground">Spend your earned BIX tokens on exclusive digital and physical items.</p>
           </div>
           <div className="relative w-full md:w-64">
-            <Search className="absolute left-3 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input className="pl-10 bg-muted/50 border-none" placeholder="Search items..." />
           </div>
         </div>
