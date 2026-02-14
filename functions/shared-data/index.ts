@@ -27,7 +27,6 @@ async function handler(req: Request): Promise<Response> {
     const url = new URL(req.url);
     const table = url.searchParams.get("table");
     const limitParam = url.searchParams.get("limit");
-    const includeAll = url.searchParams.get("all") === "1"; // Admin flag to get all records
 
     if (!table || !["tasks", "quizzes", "store_items", "user_profiles", "referral_history", "platform_metrics"].includes(table)) {
       return new Response(
@@ -49,12 +48,9 @@ async function handler(req: Request): Promise<Response> {
       options.orderBy = { createdAt: "desc" };
       if (!limitParam) options.limit = 20;
     }
-    // Only show active tasks by default (unless admin requests all)
+    // Only show active tasks
     if (table === "tasks") {
-      if (!includeAll) {
-        options.where = { isActive: 1 };
-      }
-      options.orderBy = { createdAt: "desc" };
+      options.where = { isActive: 1 };
     }
     // Platform metrics sorted by date desc
     if (table === "platform_metrics") {

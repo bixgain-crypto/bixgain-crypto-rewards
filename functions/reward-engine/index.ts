@@ -641,7 +641,6 @@ async function processReferralCommission(blink: any, userId: string, earnedAmoun
       commissionAmount,
       status: "pending",
       eligibleAt,
-      userId: "system",
     });
   } catch (err) {
     console.error("Referral commission error:", err);
@@ -819,14 +818,9 @@ async function processReferral(blink: any, newUserId: string, body: any, ipHash:
       referrerId: referrer.userId,
       referredId: newUserId,
       rewardAmount: 0, // Will be set when qualified
-      userId: "system", // System record for shared-data reads
     });
 
     // 2. Update new user: mark referred_by + grant signup bonus
-    await blink.db.table("user_profiles").update(newUserId, {
-      referredBy: referrer.userId,
-    });
-
     const updatedProfile = await updateUserBalanceAndXP(blink, newUserId, {
       balanceChange: NEW_USER_REWARD,
       earnedChange: NEW_USER_REWARD,
@@ -851,7 +845,6 @@ async function processReferral(blink: any, newUserId: string, body: any, ipHash:
       commissionAmount: 100, // Referrer reward
       status: "pending",
       eligibleAt,
-      userId: "system",
     });
 
     await trackMetric(blink, "referral", NEW_USER_REWARD);

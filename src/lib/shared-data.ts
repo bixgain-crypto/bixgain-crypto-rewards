@@ -1,13 +1,8 @@
-const SHARED_DATA_URL = 'https://gh9qbc8y--shared-data.functions.blink.new';
+const SHARED_DATA_URL = 'https://x79bsxgw--shared-data.functions.blink.new';
 
-export async function fetchSharedData(
-  table: 'tasks' | 'quizzes' | 'store_items' | 'user_profiles' | 'referral_history' | 'platform_metrics',
-  limit?: number,
-  options?: { includeAll?: boolean }
-) {
+export async function fetchSharedData(table: 'tasks' | 'quizzes' | 'store_items' | 'user_profiles' | 'referral_history' | 'platform_metrics', limit?: number) {
   const params = new URLSearchParams({ table });
   if (limit) params.set('limit', String(limit));
-  if (options?.includeAll) params.set('all', '1');
 
   const controller = new AbortController();
   setTimeout(() => controller.abort(), 10000);

@@ -44,7 +44,7 @@ export default function LeaderboardPage() {
             <p className="text-muted-foreground">The top performing miners in our ecosystem. Compete for the crown!</p>
           </div>
           <div className="relative w-full md:w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute left-3 h-4 w-4 text-muted-foreground" />
             <Input className="pl-10 bg-muted/50 border-none" placeholder="Search miners..." />
           </div>
         </div>
