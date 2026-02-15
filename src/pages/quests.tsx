@@ -23,7 +23,7 @@ const CATEGORY_ICONS: Record<string, any> = {
 };
 
 export default function QuestsPage() {
-  const { profile, user, isAdmin, refreshProfile } = useAuth();
+  const { profile, user, refreshProfile } = useAuth();
   const [tasks, setTasks] = useState<any[]>([]);
   const [completedTaskIds, setCompletedTaskIds] = useState<Set<string>>(new Set());
   const [verifyingTaskIds, setVerifyingTaskIds] = useState<Set<string>>(new Set());
@@ -140,8 +140,8 @@ export default function QuestsPage() {
     }
   };
 
-  const userLevel = profile?.level || Math.floor((profile?.xp || 0) / 1000000) + 1;
-  // isAdmin is now provided by the auth context
+  const userLevel = Math.floor((profile?.totalEarned || 0) / 500) + 1;
+  const isAdmin = profile?.role === 'admin' || user?.email === 'bixgain@gmail.com';
 
   // Map all tasks to categories for display
   const socialTasks = tasks.filter(t => ['social', 'watch', 'sponsored', 'quiz'].includes(t.category) && t.taskType !== 'daily' && t.category !== 'daily');

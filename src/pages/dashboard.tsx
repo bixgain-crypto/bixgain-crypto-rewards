@@ -75,14 +75,8 @@ export default function DashboardPage() {
             <Trophy className="h-4 w-4 text-yellow-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">Lvl {profile?.level || Math.floor((profile?.xp || 0) / 1000000) + 1}</div>
-            <div className="mt-2 space-y-1">
-              <div className="flex justify-between text-[10px] text-muted-foreground uppercase font-bold tracking-wider">
-                <span>XP Progress</span>
-                <span>{((profile?.xp || 0) % 1000000).toLocaleString()} / 1,000,000</span>
-              </div>
-              <Progress value={((profile?.xp || 0) % 1000000) / 10000} className="h-1.5" />
-            </div>
+            <div className="text-3xl font-bold">Lvl {Math.floor((profile?.totalEarned || 0) / 500) + 1}</div>
+            <p className="text-xs text-muted-foreground mt-1">{profile?.xp || 0} XP earned</p>
           </CardContent>
         </Card>
 
@@ -125,8 +119,8 @@ export default function DashboardPage() {
                       <p className="font-bold text-primary">+{task.rewardAmount} BIX</p>
                       <p className="text-xs text-muted-foreground flex items-center gap-1 justify-end"><Clock className="h-3 w-3" /> 2m</p>
                     </div>
-                    <Button
-                      size="sm"
+                    <Button 
+                      size="sm" 
                       className="gold-gradient hover:opacity-90"
                       onClick={() => window.location.href = '/earn'}
                     >
@@ -146,7 +140,7 @@ export default function DashboardPage() {
               <div className="relative z-10 text-background">
                 <h3 className="text-xl font-bold mb-2">Claim Today's Bonus</h3>
                 <p className="text-sm mb-6 opacity-90">Log in every day to increase your earning multiplier up to 5x!</p>
-                <Button
+                <Button 
                   className="w-full bg-background text-primary hover:bg-background/90 font-bold"
                   onClick={handleDailyCheckin}
                   disabled={checkinLoading}
@@ -171,9 +165,9 @@ export default function DashboardPage() {
                     <p className="font-bold">BixGain Roulette</p>
                     <p className="text-xs opacity-80">Win up to 10x your bet</p>
                   </div>
-                  <Button
-                    size="sm"
-                    variant="secondary"
+                  <Button 
+                    size="sm" 
+                    variant="secondary" 
                     className="bg-white/20 hover:bg-white/30 backdrop-blur-md border-none text-white"
                     onClick={() => window.location.href = '/games'}
                   >

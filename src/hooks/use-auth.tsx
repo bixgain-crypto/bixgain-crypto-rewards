@@ -7,7 +7,6 @@ interface AuthContextType {
   user: BlinkUser | null;
   profile: any | null;
   isAuthenticated: boolean;
-  isAdmin: boolean;
   isLoading: boolean;
   login: (redirectUrl?: string) => void;
   logout: () => Promise<void>;
@@ -15,14 +14,6 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-// Admin is determined by email ONLY — no database role checks
-const ADMIN_EMAIL = 'bixgain@gmail.com';
-
-function isAdminUser(user: BlinkUser | null): boolean {
-  if (!user?.email) return false;
-  return user.email.trim().toLowerCase() === ADMIN_EMAIL;
-}
 
 // Extract referral code from URL (supports both /join?ref= and ?ref=)
 function getReferralCodeFromURL(): string | null {
@@ -62,6 +53,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (existingProfile) {
         setProfile(existingProfile);
 
+        // Ensure bixgain@gmail.com is admin if they somehow already have a profile but not the role
+        if (blinkUser.email === 'bixgain@gmail.com' && existingProfile.role !== 'admin') {
+          try {
+            await blink.db.table('user_profiles').update(existingProfile.id, { role: 'admin' });
+            setProfile({ ...existingProfile, role: 'admin' });
+          } catch (err) {
+            console.error('Failed to auto-elevate admin:', err);
+          }
+        }
+
         // Process pending referral for existing users who haven't been referred yet
         if (!existingProfile.referredBy) {
           const pendingRef = getPendingReferral();
@@ -81,14 +82,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         // Create profile for new user
         const referralCode = `BIX-${blinkUser.id.slice(-6).toUpperCase()}`;
+        const isAdmin = blinkUser.email === 'bixgain@gmail.com';
         
         const newProfile = await blink.db.table('user_profiles').create({
+          id: blinkUser.id,
           userId: blinkUser.id,
           displayName: blinkUser.displayName || 'Miner',
           referralCode,
           balance: 100, // Welcome bonus
           totalEarned: 100,
           xp: 0,
+          role: isAdmin ? 'admin' : 'user',
         });
 
         await blink.db.table('transactions').create({
@@ -156,7 +160,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, profile, isAuthenticated: !!user, isAdmin: isAdminUser(user), isLoading, login, logout, refreshProfile }}>
+    <AuthContext.Provider value={{ user, profile, isAuthenticated: !!user, isLoading, login, logout, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );

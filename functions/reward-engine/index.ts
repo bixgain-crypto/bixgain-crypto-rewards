@@ -73,35 +73,6 @@ function generateSecureCode(length = 8): string {
   return Array.from(array, (b) => chars[b % chars.length]).join("");
 }
 
-// ===================== XP AND LEVELING SYSTEM =====================
-const XP_PER_LEVEL = 1000000;
-
-function calculateLevel(xp: number): number {
-  return Math.floor(xp / XP_PER_LEVEL) + 1;
-}
-
-// Helper to update user profile with XP and balance, handling level ups
-async function updateUserBalanceAndXP(blink: any, userId: string, data: { balanceChange: number; earnedChange: number; xpChange: number }) {
-  const profiles = await blink.db.table("user_profiles").list({ where: { userId }, limit: 1 });
-  if (profiles.length === 0) return null;
-  const profile = profiles[0];
-
-  const newXP = (profile.xp || 0) + data.xpChange;
-  const newLevel = calculateLevel(newXP);
-  const leveledUp = newLevel > (profile.level || 1);
-
-  const updateData: any = {
-    balance: (profile.balance || 0) + data.balanceChange,
-    totalEarned: (profile.totalEarned || 0) + data.earnedChange,
-    xp: newXP,
-    level: newLevel,
-  };
-
-  await blink.db.table("user_profiles").update(userId, updateData);
-  
-  return { ...profile, ...updateData, leveledUp };
-}
-
 // ===================== ABUSE DETECTION =====================
 async function checkAbuseThrottling(blink: any, userId: string, ipHash: string): Promise<{ allowed: boolean; multiplier: number; reason?: string }> {
   // Check if user is flagged
@@ -233,8 +204,6 @@ async function handler(req: Request): Promise<Response> {
     }
 
     const userId = auth.userId;
-    const userEmail = auth.email || null;
-    console.log(`[Auth] userId=${userId}, email=${userEmail}`);
     const body = await req.json();
     const { action } = body;
 
@@ -281,36 +250,24 @@ async function handler(req: Request): Promise<Response> {
       case "redeem_task_code":
         return await redeemTaskCode(blink, userId, body, ipHash, deviceHash, userAgent);
       case "admin_generate_code_window":
-        return await adminGenerateCodeWindow(blink, userId, userEmail, body);
+        return await adminGenerateCodeWindow(blink, userId, body);
       case "admin_list_code_windows":
-        return await adminListCodeWindows(blink, userId, userEmail, body);
+        return await adminListCodeWindows(blink, userId, body);
       case "admin_disable_code_window":
-        return await adminDisableCodeWindow(blink, userId, userEmail, body);
+        return await adminDisableCodeWindow(blink, userId, body);
       case "admin_get_metrics":
-        return await adminGetMetrics(blink, userId, userEmail);
+        return await adminGetMetrics(blink, userId);
       case "admin_get_abuse_flags":
-        return await adminGetAbuseFlags(blink, userId, userEmail);
+        return await adminGetAbuseFlags(blink, userId);
       case "admin_resolve_flag":
-        return await adminResolveFlag(blink, userId, userEmail, body);
-      case "admin_list_users":
-        return await adminListUsers(blink, userId, userEmail);
-      case "admin_list_all_tasks":
-        return await adminListAllTasks(blink, userId, userEmail);
-      case "admin_create_task":
-        return await adminCreateTask(blink, userId, userEmail, body);
-      case "admin_toggle_task":
-        return await adminToggleTask(blink, userId, userEmail, body);
-      case "admin_delete_task":
-        return await adminDeleteTask(blink, userId, userEmail, body);
-      case "admin_set_user_role":
-        return await adminSetUserRole(blink, userId, userEmail, body);
+        return await adminResolveFlag(blink, userId, body);
       case "get_pending_rewards":
         return await getPendingRewards(blink, userId);
       // Legacy compat
       case "verify_reward_code":
         return await redeemTaskCode(blink, userId, body, ipHash, deviceHash, userAgent);
       case "admin_generate_code":
-        return await adminGenerateCodeWindow(blink, userId, userEmail, body);
+        return await adminGenerateCodeWindow(blink, userId, body);
       default:
         return errorResponse("Invalid action");
     }
@@ -320,23 +277,20 @@ async function handler(req: Request): Promise<Response> {
   }
 }
 
-// ===================== ADMIN CHECK (EMAIL-ONLY) =====================
-const ADMIN_EMAIL = "bixgain@gmail.com";
-
-// Admin is verified purely by email from the JWT token — no database role checks
-function isAdminEmail(email: string | null | undefined): boolean {
-  if (!email) return false;
-  return email.trim().toLowerCase() === ADMIN_EMAIL;
+// ===================== ADMIN CHECK =====================
+async function verifyAdmin(blink: any, userId: string): Promise<boolean> {
+  const profile = await blink.db.table("user_profiles").get(userId);
+  return profile?.role === "admin";
 }
 
 // ===================== TASK CODE WINDOW SYSTEM =====================
 
-async function adminGenerateCodeWindow(blink: any, userId: string, userEmail: string | null, body: any) {
-  if (!isAdminEmail(userEmail)) {
+async function adminGenerateCodeWindow(blink: any, userId: string, body: any) {
+  if (!(await verifyAdmin(blink, userId))) {
     return errorResponse("Admin access required", 403);
   }
 
-  const {taskId, validHours = 3, maxRedemptions} = body;
+  const { taskId, validHours = 3, maxRedemptions } = body;
 
   // Validate task exists
   if (taskId) {
@@ -388,8 +342,8 @@ async function adminGenerateCodeWindow(blink: any, userId: string, userEmail: st
   });
 }
 
-async function adminListCodeWindows(blink: any, userId: string, userEmail: string | null, body: any) {
-  if (!isAdminEmail(userEmail)) {
+async function adminListCodeWindows(blink: any, userId: string, body: any) {
+  if (!(await verifyAdmin(blink, userId))) {
     return errorResponse("Admin access required", 403);
   }
 
@@ -422,8 +376,8 @@ async function adminListCodeWindows(blink: any, userId: string, userEmail: strin
   return jsonResponse({ success: true, windows: enriched });
 }
 
-async function adminDisableCodeWindow(blink: any, userId: string, userEmail: string | null, body: any) {
-  if (!isAdminEmail(userEmail)) {
+async function adminDisableCodeWindow(blink: any, userId: string, body: any) {
+  if (!(await verifyAdmin(blink, userId))) {
     return errorResponse("Admin access required", 403);
   }
 
@@ -545,11 +499,11 @@ async function redeemTaskCode(
       currentRedemptions: (window.currentRedemptions || 0) + 1,
     });
 
-    // Update user balance and XP
-    const updatedProfile = await updateUserBalanceAndXP(blink, userId, {
-      balanceChange: rewardAmount,
-      earnedChange: rewardAmount,
-      xpChange: 100, // Significant XP for code redemption
+    // Update user balance
+    await blink.db.table("user_profiles").update(userId, {
+      balance: (profile.balance || 0) + rewardAmount,
+      totalEarned: (profile.totalEarned || 0) + rewardAmount,
+      xp: (profile.xp || 0) + 10,
     });
 
     // Log transaction
@@ -580,10 +534,8 @@ async function redeemTaskCode(
       success: true,
       reward: rewardAmount,
       multiplier: abuseCheck.multiplier,
-      newBalance: updatedProfile?.balance,
-      newLevel: updatedProfile?.level,
-      leveledUp: updatedProfile?.leveledUp,
-      message: `+${rewardAmount} BIX earned!${updatedProfile?.leveledUp ? " LEVEL UP!" : ""}`,
+      newBalance: (profile.balance || 0) + rewardAmount,
+      message: `+${rewardAmount} BIX earned!`,
     });
   } catch (err) {
     console.error("Redemption error:", err);
@@ -595,10 +547,9 @@ async function redeemTaskCode(
 
 async function processReferralCommission(blink: any, userId: string, earnedAmount: number, sourceId: string) {
   try {
-    const profiles = await blink.db.table("user_profiles").list({ where: { userId }, limit: 1 });
-    if (profiles.length === 0 || !profiles[0].referredBy) return; // No profile or no referrer
+    const profile = await blink.db.table("user_profiles").get(userId);
+    if (!profile?.referredBy) return; // No referrer
 
-    const profile = profiles[0];
     const referrerId = profile.referredBy;
 
     // Check referral qualification: referred user must have completed 2+ tasks
@@ -702,10 +653,13 @@ async function autoProcessPending(blink: any, userId: string) {
 
 async function processReward(blink: any, item: any) {
   try {
-    const updatedProfile = await updateUserBalanceAndXP(blink, item.userId, {
-      balanceChange: item.rewardAmount,
-      earnedChange: item.rewardAmount,
-      xpChange: 50,
+    const profile = await blink.db.table("user_profiles").get(item.userId);
+    if (!profile) return;
+
+    await blink.db.table("user_profiles").update(item.userId, {
+      balance: (profile.balance || 0) + item.rewardAmount,
+      totalEarned: (profile.totalEarned || 0) + item.rewardAmount,
+      xp: (profile.xp || 0) + 10,
     });
 
     await blink.db.table("pending_rewards").update(item.id, { status: "processed" });
@@ -731,10 +685,13 @@ async function processReward(blink: any, item: any) {
 
 async function processCommission(blink: any, comm: any) {
   try {
-    const updatedProfile = await updateUserBalanceAndXP(blink, comm.referrerId, {
-      balanceChange: comm.commissionAmount,
-      earnedChange: comm.commissionAmount,
-      xpChange: 25,
+    const referrerProfile = await blink.db.table("user_profiles").get(comm.referrerId);
+    if (!referrerProfile) return;
+
+    await blink.db.table("user_profiles").update(comm.referrerId, {
+      balance: (referrerProfile.balance || 0) + comm.commissionAmount,
+      totalEarned: (referrerProfile.totalEarned || 0) + comm.commissionAmount,
+      xp: (referrerProfile.xp || 0) + 5,
     });
 
     await blink.db.table("referral_commissions").update(comm.id, {
@@ -840,11 +797,15 @@ async function processReferral(blink: any, newUserId: string, body: any, ipHash:
     });
 
     // 2. Update new user: mark referred_by + grant signup bonus
-    const updatedProfile = await updateUserBalanceAndXP(blink, newUserId, {
-      balanceChange: NEW_USER_REWARD,
-      earnedChange: NEW_USER_REWARD,
-      xpChange: 100,
-    });
+    if (newUserProfiles.length > 0) {
+      const newProfile = newUserProfiles[0];
+      await blink.db.table("user_profiles").update(newUserId, {
+        referredBy: referrer.userId,
+        balance: (newProfile.balance || 0) + NEW_USER_REWARD,
+        totalEarned: (newProfile.totalEarned || 0) + NEW_USER_REWARD,
+        xp: (newProfile.xp || 0) + 25,
+      });
+    }
 
     // 3. Log new user transaction
     await blink.db.table("transactions").create({
@@ -871,9 +832,6 @@ async function processReferral(blink: any, newUserId: string, body: any, ipHash:
     return jsonResponse({
       success: true,
       newUserReward: NEW_USER_REWARD,
-      newBalance: updatedProfile?.balance,
-      newLevel: updatedProfile?.level,
-      leveledUp: updatedProfile?.leveledUp,
       message: `Referral successful! You earned ${NEW_USER_REWARD} BIX. Your referrer will be rewarded after verification.`,
     });
   } catch (err) {
@@ -898,7 +856,7 @@ async function completeTask(blink: any, userId: string, body: any) {
   if (profiles.length === 0) return errorResponse("Profile not found");
   const profile = profiles[0];
 
-  const userLevel = profile.level || Math.floor((profile.xp || 0) / 1000000) + 1;
+  const userLevel = Math.floor((profile.totalEarned || 0) / 500) + 1;
   if (task.requiredLevel && userLevel < task.requiredLevel) {
     return errorResponse(`Requires Level ${task.requiredLevel}`);
   }
@@ -940,7 +898,7 @@ async function completeTask(blink: any, userId: string, body: any) {
   }
 
   const reward = task.rewardAmount || 0;
-  const xpReward = task.xpReward || 100;
+  const xpReward = task.xpReward || 0;
 
   try {
     await blink.db.table("user_tasks").create({
@@ -950,10 +908,10 @@ async function completeTask(blink: any, userId: string, body: any) {
       completedAt: new Date().toISOString(),
     });
 
-    const updatedProfile = await updateUserBalanceAndXP(blink, userId, {
-      balanceChange: reward,
-      earnedChange: reward,
-      xpChange: xpReward,
+    await blink.db.table("user_profiles").update(userId, {
+      balance: (profile.balance || 0) + reward,
+      totalEarned: (profile.totalEarned || 0) + reward,
+      xp: (profile.xp || 0) + xpReward,
     });
 
     await blink.db.table("transactions").create({
@@ -978,10 +936,8 @@ async function completeTask(blink: any, userId: string, body: any) {
       success: true,
       reward,
       xp: xpReward,
-      newBalance: updatedProfile?.balance,
-      newLevel: updatedProfile?.level,
-      leveledUp: updatedProfile?.leveledUp,
-      message: `+${reward} BIX earned!${updatedProfile?.leveledUp ? " LEVEL UP!" : ""}`,
+      newBalance: (profile.balance || 0) + reward,
+      message: `+${reward} BIX earned!`,
     });
   } catch (err) {
     console.error("Task completion error:", err);
@@ -1014,18 +970,15 @@ async function dailyCheckin(blink: any, userId: string) {
   const multiplier = Math.min(1 + (newStreak - 1) * 0.5, 5);
   const baseReward = 10;
   const reward = Math.round(baseReward * multiplier);
-  const xpReward = 50 + (newStreak * 10);
+  const xpReward = 5 + newStreak;
 
   try {
-    const updatedProfile = await updateUserBalanceAndXP(blink, userId, {
-      balanceChange: reward,
-      earnedChange: reward,
-      xpChange: xpReward,
-    });
-
     await blink.db.table("user_profiles").update(userId, {
+      balance: (profile.balance || 0) + reward,
+      totalEarned: (profile.totalEarned || 0) + reward,
       lastLogin: today,
       dailyStreak: newStreak,
+      xp: (profile.xp || 0) + xpReward,
     });
 
     await blink.db.table("transactions").create({
@@ -1055,9 +1008,6 @@ async function dailyCheckin(blink: any, userId: string) {
       streak: newStreak,
       multiplier,
       xp: xpReward,
-      newBalance: updatedProfile?.balance,
-      newLevel: updatedProfile?.level,
-      leveledUp: updatedProfile?.leveledUp,
       message: `+${reward} BIX! ${newStreak}-day streak (${multiplier}x)`,
     });
   } catch (err) {
@@ -1211,7 +1161,7 @@ async function finishQuiz(blink: any, userId: string, body: any) {
     totalReward += bonusReward;
   }
 
-  const xpReward = score * 10 + (bonusReward > 0 ? 500 : 0);
+  const xpReward = score * 5 + (bonusReward > 0 ? 50 : 0);
 
   await blink.db.table("quiz_sessions").update(sessionId, {
     status: "completed",
@@ -1219,11 +1169,15 @@ async function finishQuiz(blink: any, userId: string, body: any) {
     totalEarned: totalReward,
   });
 
-  const updatedProfile = await updateUserBalanceAndXP(blink, userId, {
-    balanceChange: totalReward,
-    earnedChange: totalReward,
-    xpChange: xpReward,
-  });
+  const profiles = await blink.db.table("user_profiles").list({ where: { userId }, limit: 1 });
+  if (profiles.length > 0) {
+    const profile = profiles[0];
+    await blink.db.table("user_profiles").update(userId, {
+      balance: (profile.balance || 0) + totalReward,
+      totalEarned: (profile.totalEarned || 0) + totalReward,
+      xp: (profile.xp || 0) + xpReward,
+    });
+  }
 
   await blink.db.table("transactions").create({
     userId,
@@ -1250,9 +1204,6 @@ async function finishQuiz(blink: any, userId: string, body: any) {
     totalReward,
     bonusReward,
     xp: xpReward,
-    newBalance: updatedProfile?.balance,
-    newLevel: updatedProfile?.level,
-    leveledUp: updatedProfile?.leveledUp,
     isPerfect: score === questionIds.length,
     message: `Quiz complete! ${score}/${questionIds.length} correct. +${totalReward} BIX!`,
   });
@@ -1285,19 +1236,9 @@ async function gameResult(blink: any, userId: string, body: any) {
 
   const netChange = (betAmount * multiplier) - betAmount;
 
-  // Add XP and track total earned only if they WON
-  if (netChange > 0) {
-    await updateUserBalanceAndXP(blink, userId, {
-      balanceChange: netChange,
-      earnedChange: netChange,
-      xpChange: Math.round(netChange / 10), // 1 XP for every 10 BIX won
-    });
-  } else {
-    // If they lost, only deduct balance
-    await blink.db.table("user_profiles").update(userId, {
-      balance: (profile.balance || 0) + netChange,
-    });
-  }
+  await blink.db.table("user_profiles").update(userId, {
+    balance: (profile.balance || 0) + netChange,
+  });
 
   await blink.db.table("transactions").create({
     userId,
@@ -1331,8 +1272,8 @@ async function getPendingRewards(blink: any, userId: string) {
 
 // ===================== ADMIN METRICS =====================
 
-async function adminGetMetrics(blink: any, userId: string, userEmail: string | null) {
-  if (!isAdminEmail(userEmail)) {
+async function adminGetMetrics(blink: any, userId: string) {
+  if (!(await verifyAdmin(blink, userId))) {
     return errorResponse("Admin access required", 403);
   }
 
@@ -1353,8 +1294,8 @@ async function adminGetMetrics(blink: any, userId: string, userEmail: string | n
   });
 }
 
-async function adminGetAbuseFlags(blink: any, userId: string, userEmail: string | null) {
-  if (!isAdminEmail(userEmail)) {
+async function adminGetAbuseFlags(blink: any, userId: string) {
+  if (!(await verifyAdmin(blink, userId))) {
     return errorResponse("Admin access required", 403);
   }
 
@@ -1366,8 +1307,8 @@ async function adminGetAbuseFlags(blink: any, userId: string, userEmail: string 
   return jsonResponse({ success: true, flags });
 }
 
-async function adminResolveFlag(blink: any, userId: string, userEmail: string | null, body: any) {
-  if (!isAdminEmail(userEmail)) {
+async function adminResolveFlag(blink: any, userId: string, body: any) {
+  if (!(await verifyAdmin(blink, userId))) {
     return errorResponse("Admin access required", 403);
   }
 
@@ -1381,107 +1322,6 @@ async function adminResolveFlag(blink: any, userId: string, userEmail: string | 
   });
 
   return jsonResponse({ success: true, message: "Flag resolved" });
-}
-
-// ===================== ADMIN: USER & TASK MANAGEMENT =====================
-
-async function adminListUsers(blink: any, userId: string, userEmail: string | null) {
-  if (!isAdminEmail(userEmail)) {
-    return errorResponse("Admin access required", 403);
-  }
-
-  const users = await blink.db.table("user_profiles").list({
-    orderBy: { balance: "desc" },
-    limit: 100,
-  });
-
-  return jsonResponse({ success: true, users });
-}
-
-async function adminListAllTasks(blink: any, userId: string, userEmail: string | null) {
-  if (!isAdminEmail(userEmail)) {
-    return errorResponse("Admin access required", 403);
-  }
-
-  const tasks = await blink.db.table("tasks").list({
-    orderBy: { createdAt: "desc" },
-    limit: 100,
-  });
-
-  return jsonResponse({ success: true, tasks });
-}
-
-async function adminCreateTask(blink: any, userId: string, userEmail: string | null, body: any) {
-  if (!isAdminEmail(userEmail)) {
-    return errorResponse("Admin access required", 403);
-  }
-
-  const { title, description, category, taskType, rewardAmount, xpReward, requiredLevel, link } = body;
-  if (!title) return errorResponse("Title is required");
-
-  const taskId = `task_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-  const task = await blink.db.table("tasks").create({
-    id: taskId,
-    title,
-    description: description || "",
-    category: category || "social",
-    taskType: taskType || "one-time",
-    rewardAmount: rewardAmount || 100,
-    xpReward: xpReward || 50,
-    requiredLevel: requiredLevel || 0,
-    link: link || "",
-    isActive: 1,
-  });
-
-  return jsonResponse({ success: true, task, message: "Task created successfully" });
-}
-
-async function adminToggleTask(blink: any, userId: string, userEmail: string | null, body: any) {
-  if (!isAdminEmail(userEmail)) {
-    return errorResponse("Admin access required", 403);
-  }
-
-  const { taskId, isActive } = body;
-  if (!taskId) return errorResponse("Missing taskId");
-
-  await blink.db.table("tasks").update(taskId, { isActive: isActive ? 1 : 0 });
-
-  return jsonResponse({ success: true, message: `Task ${isActive ? "activated" : "deactivated"}` });
-}
-
-async function adminDeleteTask(blink: any, userId: string, userEmail: string | null, body: any) {
-  if (!isAdminEmail(userEmail)) {
-    return errorResponse("Admin access required", 403);
-  }
-
-  const { taskId } = body;
-  if (!taskId) return errorResponse("Missing taskId");
-
-  await blink.db.table("tasks").delete(taskId);
-
-  return jsonResponse({ success: true, message: "Task deleted" });
-}
-
-async function adminSetUserRole(blink: any, userId: string, userEmail: string | null, body: any) {
-  // Only full admins can change roles (not moderators)
-  if (!isAdminEmail(userEmail)) {
-    return errorResponse("Full admin access required to change roles", 403);
-  }
-
-  const { targetUserId, role } = body;
-  if (!targetUserId || !role) return errorResponse("Missing targetUserId or role");
-  if (!["admin", "user", "moderator"].includes(role)) {
-    return errorResponse("Invalid role. Must be: admin, user, or moderator");
-  }
-
-  // Prevent removing own admin role
-  if (targetUserId === userId && role !== "admin") {
-    return errorResponse("Cannot remove your own admin role");
-  }
-
-  await blink.db.table("user_profiles").update(targetUserId, { role });
-
-  return jsonResponse({ success: true, message: `User role updated to ${role}` });
 }
 
 Deno.serve(handler);
