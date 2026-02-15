@@ -10,12 +10,7 @@ interface AuthContextType {
   login: () => Promise<void>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
-  userLevel: number;
-  xpProgress: number;
-  xpToNextLevel: number;
 }
-
-const XP_PER_LEVEL = 1000000;
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -162,24 +157,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const xp = profile?.xp || 0;
-  const userLevel = profile?.level || Math.floor(xp / XP_PER_LEVEL) + 1;
-  const xpProgress = xp % XP_PER_LEVEL;
-  const xpToNextLevel = XP_PER_LEVEL;
-
   return (
-    <AuthContext.Provider value={{ 
-      user, 
-      profile, 
-      isAuthenticated: !!user, 
-      isLoading, 
-      login, 
-      logout, 
-      refreshProfile,
-      userLevel,
-      xpProgress,
-      xpToNextLevel
-    }}>
+    <AuthContext.Provider value={{ user, profile, isAuthenticated: !!user, isLoading, login, logout, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );

@@ -6,15 +6,13 @@ import { DashboardLayout } from '../components/dashboard-layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Progress } from '../components/ui/progress';
-import { Link, useNavigate } from 'react-router-dom';
 import { Coins, Zap, Trophy, TrendingUp, ArrowRight, CheckCircle2, Clock, Gamepad2, Gift } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function DashboardPage() {
-  const { profile, user, refreshProfile, userLevel, xpProgress, xpToNextLevel } = useAuth();
+  const { profile, user, refreshProfile } = useAuth();
   const [tasks, setTasks] = useState<any[]>([]);
   const [loadingTasks, setLoadingTasks] = useState(true);
-  const navigate = useNavigate();
 
   useEffect(() => {
     const fetchTasks = async () => {
@@ -77,13 +75,13 @@ export default function DashboardPage() {
             <Trophy className="h-4 w-4 text-yellow-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">Lvl {userLevel}</div>
+            <div className="text-3xl font-bold">Lvl {profile?.level || Math.floor((profile?.xp || 0) / 1000000) + 1}</div>
             <div className="mt-2 space-y-1">
               <div className="flex justify-between text-[10px] text-muted-foreground uppercase font-bold tracking-wider">
                 <span>XP Progress</span>
-                <span>{xpProgress.toLocaleString()} / {xpToNextLevel.toLocaleString()}</span>
+                <span>{((profile?.xp || 0) % 1000000).toLocaleString()} / 1,000,000</span>
               </div>
-              <Progress value={(xpProgress / xpToNextLevel) * 100} className="h-1.5" />
+              <Progress value={((profile?.xp || 0) % 1000000) / 10000} className="h-1.5" />
             </div>
           </CardContent>
         </Card>
@@ -104,9 +102,7 @@ export default function DashboardPage() {
         <div className="lg:col-span-2 space-y-6">
           <div className="flex items-center justify-between">
             <h2 className="text-2xl font-display font-bold">Recommended Quests</h2>
-            <Link to="/earn">
-              <Button variant="link" className="text-primary hover:text-primary/80">View all <ArrowRight className="ml-2 h-4 w-4" /></Button>
-            </Link>
+            <Button variant="link" className="text-primary hover:text-primary/80">View all <ArrowRight className="ml-2 h-4 w-4" /></Button>
           </div>
 
           <div className="grid gap-4">
@@ -132,7 +128,7 @@ export default function DashboardPage() {
                     <Button
                       size="sm"
                       className="gold-gradient hover:opacity-90"
-                      onClick={() => navigate('/earn')}
+                      onClick={() => window.location.href = '/earn'}
                     >
                       Start
                     </Button>
@@ -179,7 +175,7 @@ export default function DashboardPage() {
                     size="sm"
                     variant="secondary"
                     className="bg-white/20 hover:bg-white/30 backdrop-blur-md border-none text-white"
-                    onClick={() => navigate('/games')}
+                    onClick={() => window.location.href = '/games'}
                   >
                     Play
                   </Button>

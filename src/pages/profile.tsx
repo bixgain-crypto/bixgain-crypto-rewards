@@ -12,9 +12,13 @@ import { User, Shield, Coins, Trophy, Zap, Calendar, Edit2, Check, X } from 'luc
 import { toast } from 'sonner';
 
 export default function ProfilePage() {
-  const { user, profile, refreshProfile, userLevel, xpProgress, xpToNextLevel } = useAuth();
+  const { user, profile, refreshProfile } = useAuth();
   const [editing, setEditing] = useState(false);
   const [displayName, setDisplayName] = useState(profile?.display_name || '');
+
+  const level = profile?.level || Math.floor((profile?.xp || 0) / 1000000) + 1;
+  const xpInLevel = (profile?.xp || 0) % 1000000;
+  const xpToNext = 1000000;
 
   const handleSave = async () => {
     if (!user || !displayName.trim()) return;
@@ -37,7 +41,7 @@ export default function ProfilePage() {
   const stats = [
     { label: 'Total Earned', value: `${(profile?.total_earned || 0).toLocaleString()} BIX`, icon: Coins, color: 'text-primary' },
     { label: 'Daily Streak', value: `${profile?.daily_streak || 0} Days`, icon: Zap, color: 'text-orange-400' },
-    { label: 'Miner Level', value: `Level ${userLevel}`, icon: Trophy, color: 'text-yellow-400' },
+    { label: 'Miner Level', value: `Level ${level}`, icon: Trophy, color: 'text-yellow-400' },
     { label: 'Member Since', value: profile?.created_at ? new Date(profile.created_at).toLocaleDateString() : 'N/A', icon: Calendar, color: 'text-sky-400' },
   ];
 
@@ -80,7 +84,7 @@ export default function ProfilePage() {
             </div>
               <p className="text-sm text-muted-foreground mb-3">{user?.email}</p>
               <div className="flex items-center gap-3 justify-center md:justify-start">
-                <Badge className="gold-gradient border-none">Level {userLevel} Miner</Badge>
+                <Badge className="gold-gradient border-none">Level {level} Miner</Badge>
                 <Badge variant="outline" className="border-primary/30 text-primary">
                   <Shield className="h-3 w-3 mr-1" /> {profile?.role === 'admin' ? 'Admin' : 'Verified'}
                 </Badge>
@@ -101,11 +105,11 @@ export default function ProfilePage() {
           </CardHeader>
           <CardContent>
             <div className="flex items-center justify-between text-sm mb-2">
-              <span className="font-medium">Level {userLevel}</span>
-              <span className="text-muted-foreground">{xpProgress.toLocaleString()} / {xpToNextLevel.toLocaleString()} XP</span>
-              <span className="font-medium">Level {userLevel + 1}</span>
+              <span className="font-medium">Level {level}</span>
+              <span className="text-muted-foreground">{xpInLevel.toLocaleString()} / {xpToNext.toLocaleString()} XP</span>
+              <span className="font-medium">Level {level + 1}</span>
             </div>
-            <Progress value={(xpProgress / xpToNextLevel) * 100} className="h-3" />
+            <Progress value={(xpInLevel / xpToNext) * 100} className="h-3" />
             <p className="text-xs text-muted-foreground mt-3">Every 1,000,000 XP earned advances you one level. Higher levels unlock better rewards and multipliers.</p>
           </CardContent>
         </Card>

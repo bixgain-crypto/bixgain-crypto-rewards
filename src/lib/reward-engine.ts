@@ -263,10 +263,7 @@ export const rewardEngine = {
       isWin,
       multiplier,
       profit,
-      newBalance: (profile?.balance || 0) + profit,
-      message: isWin 
-        ? `You won ${profit} BIX! (+${multiplier}x)` 
-        : `You lost ${betAmount} BIX. Better luck next time!`
+      newBalance: (profile?.balance || 0) + profit
     };
   },
 

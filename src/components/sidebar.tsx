@@ -3,7 +3,6 @@ import { useAuth } from '../hooks/use-auth';
 import { Button } from './ui/button';
 import { useState } from 'react';
 import { cn } from '../lib/utils';
-import { Link } from 'react-router-dom';
 
 const navItems = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
@@ -44,10 +43,9 @@ export function AppSidebar({ activePath }: { activePath: string }) {
 
           <nav className="flex-1 space-y-1">
             {navItems.map((item) => (
-              <Link
+              <a
                 key={item.path}
-                to={item.path}
-                onClick={() => setIsMobileOpen(false)}
+                href={item.path}
                 className={cn(
                   "flex items-center justify-between px-3 py-2 rounded-lg transition-colors group",
                   activePath === item.path 
@@ -63,21 +61,19 @@ export function AppSidebar({ activePath }: { activePath: string }) {
                   "h-4 w-4 opacity-0 transition-opacity",
                   activePath === item.path && "opacity-100"
                 )} />
-              </Link>
+              </a>
             ))}
 
             {isAdmin && (
-              <Link
-                to="/admin"
-                onClick={() => setIsMobileOpen(false)}
+              <a
+                href="/admin"
                 className={cn(
-                  "flex items-center gap-3 px-3 py-2 rounded-lg text-red-400 hover:bg-red-400/10 transition-colors",
-                  activePath === '/admin' && "bg-red-400/10"
+                  "flex items-center gap-3 px-3 py-2 rounded-lg text-red-400 hover:bg-red-400/10 transition-colors"
                 )}
               >
                 <Settings className="h-4 w-4" />
                 <span>Admin Panel</span>
-              </Link>
+              </a>
             )}
           </nav>
 

@@ -9,7 +9,6 @@ import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Input } from '../components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
-import { useNavigate } from 'react-router-dom';
 import { Zap, Share2, BrainCircuit, CheckCircle2, Lock, ArrowRight, Gift, Trophy, Sparkles, Globe, Eye, ShieldCheck, Clock, Ticket } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -24,7 +23,7 @@ const CATEGORY_ICONS: Record<string, any> = {
 };
 
 export default function QuestsPage() {
-  const { profile, user, refreshProfile, userLevel } = useAuth();
+  const { profile, user, refreshProfile } = useAuth();
   const [tasks, setTasks] = useState<any[]>([]);
   const [completedTaskIds, setCompletedTaskIds] = useState<Set<string>>(new Set());
   const [verifyingTaskIds, setVerifyingTaskIds] = useState<Set<string>>(new Set());
@@ -34,7 +33,6 @@ export default function QuestsPage() {
   const [verifyingCode, setVerifyingCode] = useState(false);
   const [pendingRewards, setPendingRewards] = useState<any[]>([]);
   const [generatingAdminCode, setGeneratingAdminCode] = useState(false);
-  const navigate = useNavigate();
 
   useEffect(() => {
     const stored = localStorage.getItem('bix_verifying_tasks');
@@ -143,6 +141,7 @@ export default function QuestsPage() {
     }
   };
 
+  const userLevel = profile?.level || Math.floor((profile?.xp || 0) / 1000000) + 1;
   const isAdmin = profile?.role === 'admin' || user?.email === 'bixgain@gmail.com';
 
   // Map all tasks to categories for display
@@ -270,7 +269,7 @@ export default function QuestsPage() {
                 )}
 
                 {/* Quiz CTA */}
-                <Card className="bg-gradient-to-r from-primary/10 to-accent/10 border-primary/20 hover:border-primary/40 transition-all cursor-pointer" onClick={() => navigate('/quiz')}>
+                <Card className="bg-gradient-to-r from-primary/10 to-accent/10 border-primary/20 hover:border-primary/40 transition-all cursor-pointer" onClick={() => (window.location.href = '/quiz')}>
                   <CardContent className="p-6 flex items-center justify-between">
                     <div className="flex items-center gap-6">
                       <div className="w-14 h-14 rounded-2xl bg-primary/20 flex items-center justify-center border border-primary/30">
