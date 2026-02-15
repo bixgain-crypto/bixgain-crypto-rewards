@@ -35,7 +35,7 @@ export default function DashboardPage() {
     setCheckinLoading(true);
     try {
       const result = await rewardEngine.dailyCheckin();
-      toast.success(result.message);
+      toast.success(`Claimed! (+${result.earned} BIX)`);
       refreshProfile();
     } catch (err: any) {
       toast.error(err.message || 'Failed to check in.');
@@ -64,8 +64,8 @@ export default function DashboardPage() {
             <Zap className="h-4 w-4 text-orange-400" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">{profile?.dailyStreak || 0} Days</div>
-            <Progress value={((profile?.dailyStreak || 0) % 7) * 14.2} className="h-2 mt-3" />
+            <div className="text-3xl font-bold">{profile?.daily_streak || 0} Days</div>
+            <Progress value={((profile?.daily_streak || 0) % 7) * 14.2} className="h-2 mt-3" />
           </CardContent>
         </Card>
 
@@ -92,7 +92,7 @@ export default function DashboardPage() {
             <TrendingUp className="h-4 w-4 text-green-400" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">{profile?.totalEarned?.toLocaleString() || 0}</div>
+            <div className="text-3xl font-bold">{profile?.total_earned?.toLocaleString() || 0}</div>
             <p className="text-xs text-muted-foreground mt-1">Lifetime Earnings</p>
           </CardContent>
         </Card>
@@ -122,7 +122,7 @@ export default function DashboardPage() {
                   </div>
                   <div className="flex items-center gap-4">
                     <div className="text-right">
-                      <p className="font-bold text-primary">+{task.rewardAmount} BIX</p>
+                      <p className="font-bold text-primary">+{task.reward_amount} BIX</p>
                       <p className="text-xs text-muted-foreground flex items-center gap-1 justify-end"><Clock className="h-3 w-3" /> 2m</p>
                     </div>
                     <Button
@@ -195,3 +195,4 @@ export default function DashboardPage() {
     </DashboardLayout>
   );
 }
+

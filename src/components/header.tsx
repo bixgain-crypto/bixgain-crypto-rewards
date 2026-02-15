@@ -30,13 +30,13 @@ export function Header() {
 
         <div className="flex items-center gap-3 ml-2 pl-4 border-l border-border">
           <div className="hidden lg:block text-right">
-            <p className="text-sm font-medium">{profile?.displayName || 'User'}</p>
+            <p className="text-sm font-medium">{profile?.display_name || 'User'}</p>
             <p className="text-xs text-muted-foreground">Level 1 Miner</p>
           </div>
           <Avatar className="h-9 w-9 border-2 border-primary/20">
-            <AvatarImage src={user?.avatar} />
+            <AvatarImage src={user?.user_metadata?.avatar_url} />
             <AvatarFallback className="bg-primary/20 text-primary font-bold">
-              {profile?.displayName?.charAt(0) || 'U'}
+              {profile?.display_name?.charAt(0) || 'U'}
             </AvatarFallback>
           </Avatar>
         </div>

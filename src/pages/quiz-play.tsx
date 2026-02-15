@@ -13,7 +13,7 @@ interface QuizQuestion {
   id: string;
   question: string;
   options: string;
-  rewardAmount: number;
+  reward_amount: number;
   difficulty: string;
 }
 
@@ -400,7 +400,7 @@ export default function QuizPlayPage() {
             <div className="flex items-center gap-2">
               {isCorrect ? (
                 <Badge className="bg-green-500/20 text-green-400 border border-green-500/30 gap-1">
-                  <CheckCircle2 className="h-3 w-3" /> Correct! +{currentQuiz.rewardAmount} BIX
+                  <CheckCircle2 className="h-3 w-3" /> Correct! +{currentQuiz.reward_amount} BIX
                 </Badge>
               ) : (
                 <Badge className="bg-red-500/20 text-red-400 border border-red-500/30 gap-1">

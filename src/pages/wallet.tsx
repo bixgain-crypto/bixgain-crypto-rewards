@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { blink } from '../lib/blink';
+import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/use-auth';
 import { DashboardLayout } from '../components/dashboard-layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
@@ -12,13 +12,15 @@ export default function WalletPage() {
 
   useEffect(() => {
     const fetchTransactions = async () => {
-      if (profile?.userId) {
-        const history = await blink.db.table('transactions').list({
-          where: { userId: profile.userId },
-          orderBy: { createdAt: 'desc' },
-          limit: 10,
-        });
-        setTransactions(history);
+      if (profile?.user_id) {
+        const { data: history } = await supabase
+          .from('transactions')
+          .select('*')
+          .eq('user_id', profile.user_id)
+          .order('created_at', { ascending: false })
+          .limit(10);
+        
+        setTransactions(history || []);
       }
     };
     fetchTransactions();
@@ -86,7 +88,7 @@ export default function WalletPage() {
                       </TableCell>
                       <TableCell className="max-w-[200px] truncate">{tx.description}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">
-                        {new Date(tx.createdAt).toLocaleDateString()}
+                        {tx.created_at ? new Date(tx.created_at).toLocaleDateString() : 'N/A'}
                       </TableCell>
                       <TableCell className={`text-right font-bold ${tx.amount > 0 ? 'text-green-400' : 'text-red-400'}`}>
                         {tx.amount > 0 ? '+' : ''}{tx.amount} BIX

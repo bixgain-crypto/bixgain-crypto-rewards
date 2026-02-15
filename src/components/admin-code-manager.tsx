@@ -22,8 +22,8 @@ export default function AdminCodeManager({ tasks }: Props) {
 
   const fetchWindows = async () => {
     try {
-      const res = await rewardEngine.adminListCodeWindows(false);
-      setWindows(res.windows || []);
+      const res = await rewardEngine.adminListCodeWindows();
+      setWindows(res || []);
     } catch (err: any) {
       toast.error(err.message);
     } finally {
@@ -93,7 +93,7 @@ export default function AdminCodeManager({ tasks }: Props) {
               >
                 <option value="general">General (no specific task)</option>
                 {tasks.map((t) => (
-                  <option key={t.id} value={t.id}>{t.title} ({t.rewardAmount} BIX)</option>
+                  <option key={t.id} value={t.id}>{t.title} ({t.reward_amount} BIX)</option>
                 ))}
               </select>
             </div>
@@ -172,7 +172,7 @@ export default function AdminCodeManager({ tasks }: Props) {
               </TableHeader>
               <TableBody>
                 {windows.map((w) => {
-                  const isActive = Number(w.isActive) > 0 && !w.expired;
+                  const isActive = Number(w.is_active) > 0 && !w.expired;
                   return (
                     <TableRow key={w.id}>
                       <TableCell>
@@ -183,19 +183,16 @@ export default function AdminCodeManager({ tasks }: Props) {
                           </Button>
                         </div>
                       </TableCell>
-                      <TableCell className="text-xs">{w.taskId === 'general' ? 'General' : w.taskId}</TableCell>
+                      <TableCell className="text-xs">{w.task_id === 'general' ? 'General' : w.task_id}</TableCell>
                       <TableCell>
-                        <span className="font-bold">{w.currentRedemptions || 0}</span>
-                        <span className="text-muted-foreground">/{w.maxRedemptions || 'unlimited'}</span>
-                        {w.utilizationPercent !== null && (
-                          <span className="text-xs text-muted-foreground ml-1">({w.utilizationPercent}%)</span>
-                        )}
+                        <span className="font-bold">{w.current_redemptions || 0}</span>
+                        <span className="text-muted-foreground">/{w.max_redemptions || 'unlimited'}</span>
                       </TableCell>
                       <TableCell>
                         {isActive ? (
                           <span className="flex items-center gap-1 text-xs">
                             <Clock className="h-3 w-3 text-green-400" />
-                            <span className="text-green-400 font-medium">{w.remainingMinutes} min</span>
+                            <span className="text-green-400 font-medium">Active</span>
                           </span>
                         ) : (
                           <span className="text-xs text-muted-foreground">Expired</span>

@@ -38,10 +38,10 @@ export default function AdminPanel() {
     title: '',
     description: '',
     category: 'social',
-    taskType: 'one-time',
-    rewardAmount: 100,
-    xpReward: 50,
-    requiredLevel: 0,
+    task_type: 'one-time',
+    reward_amount: 100,
+    xp_reward: 50,
+    required_level: 0,
     link: '',
   });
 
@@ -49,13 +49,12 @@ export default function AdminPanel() {
 
   const fetchData = async () => {
     try {
-      // Use shared-data edge function (service-role) to bypass RLS for admin reads
       const [userList, taskList] = await Promise.all([
         fetchSharedData('user_profiles', 50),
         fetchSharedData('tasks'),
       ]);
-      setUsers(userList);
-      setTasks(taskList);
+      setUsers(userList || []);
+      setTasks(taskList || []);
     } catch (err) {
       console.error('Error fetching admin data:', err);
     } finally {
@@ -75,17 +74,20 @@ export default function AdminPanel() {
 
     setCreatingTask(true);
     try {
-      await rewardEngine.adminCreateTask(newTask);
+      await rewardEngine.adminCreateTask({
+        id: `task_${Math.random().toString(36).slice(2, 8)}`,
+        ...newTask
+      });
       toast.success('Task created successfully');
       setIsCreateDialogOpen(false);
       setNewTask({
         title: '',
         description: '',
         category: 'social',
-        taskType: 'one-time',
-        rewardAmount: 100,
-        xpReward: 50,
-        requiredLevel: 0,
+        task_type: 'one-time',
+        reward_amount: 100,
+        xp_reward: 50,
+        required_level: 0,
         link: '',
       });
       fetchData();
@@ -179,12 +181,12 @@ export default function AdminPanel() {
                   </TableHeader>
                   <TableBody>
                     {users.map((u) => (
-                      <TableRow key={u.userId || u.id}>
-                        <TableCell className="font-mono text-xs">{(u.userId || u.id || '').slice(-8)}</TableCell>
-                        <TableCell>{u.displayName || 'Miner'}</TableCell>
+                      <TableRow key={u.user_id || u.id}>
+                        <TableCell className="font-mono text-xs">{(u.user_id || u.id || '').slice(-8)}</TableCell>
+                        <TableCell>{u.display_name || 'Miner'}</TableCell>
                         <TableCell className="font-bold text-primary">{Math.round(u.balance || 0)} BIX</TableCell>
-                        <TableCell>{Math.round(u.totalEarned || 0)} BIX</TableCell>
-                        <TableCell>{u.dailyStreak || 0} days</TableCell>
+                        <TableCell>{Math.round(u.total_earned || 0)} BIX</TableCell>
+                        <TableCell>{u.daily_streak || 0} days</TableCell>
                         <TableCell>
                           <Badge variant={u.role === 'admin' ? 'default' : 'secondary'} className="text-[10px] uppercase">
                             {u.role || 'user'}
@@ -336,12 +338,12 @@ export default function AdminPanel() {
                   <TableBody>
                     {tasks.map((t) => (
                       <TableRow key={t.id}>
-                        <TableCell className="text-xs text-muted-foreground">{t.id.slice(-6)}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{(t.id || '').slice(-6)}</TableCell>
                         <TableCell className="font-medium">{t.title}</TableCell>
-                        <TableCell className="font-bold text-primary">{t.rewardAmount} BIX</TableCell>
+                        <TableCell className="font-bold text-primary">{t.reward_amount} BIX</TableCell>
                         <TableCell className="capitalize text-xs">{t.category}</TableCell>
                         <TableCell>
-                          {Number(t.isActive) > 0 ? (
+                          {Number(t.is_active) > 0 ? (
                             <Badge className="bg-green-500/20 text-green-400 border-green-500/30">Active</Badge>
                           ) : (
                             <Badge className="bg-red-500/20 text-red-400 border-red-500/30">Inactive</Badge>
@@ -353,10 +355,10 @@ export default function AdminPanel() {
                               variant="ghost" 
                               size="icon" 
                               className="h-8 w-8"
-                              onClick={() => handleToggleTaskStatus(t.id, Number(t.isActive))}
-                              title={Number(t.isActive) > 0 ? "Deactivate" : "Activate"}
+                              onClick={() => handleToggleTaskStatus(t.id, Number(t.is_active))}
+                              title={Number(t.is_active) > 0 ? "Deactivate" : "Activate"}
                             >
-                              {Number(t.isActive) > 0 ? <XCircle className="h-4 w-4 text-orange-400" /> : <CheckCircle className="h-4 w-4 text-green-400" />}
+                              {Number(t.is_active) > 0 ? <XCircle className="h-4 w-4 text-orange-400" /> : <CheckCircle className="h-4 w-4 text-green-400" />}
                             </Button>
                             <Button 
                               variant="ghost" 

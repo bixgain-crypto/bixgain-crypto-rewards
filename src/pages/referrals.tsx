@@ -158,12 +158,12 @@ export default function ReferralsPage() {
                           M{i + 1}
                         </div>
                         <div>
-                          <p className="font-bold">Miner #{(ref.referredId || '').slice(-6)}</p>
-                          <p className="text-xs text-muted-foreground">{ref.createdAt ? new Date(ref.createdAt).toLocaleDateString() : 'Recently'}</p>
+                          <p className="font-bold">Miner #{(ref.referred_id || '').slice(-6)}</p>
+                          <p className="text-xs text-muted-foreground">{ref.created_at ? new Date(ref.created_at).toLocaleDateString() : 'Recently'}</p>
                         </div>
                       </div>
                       <div className="text-right">
-                        <p className="text-green-400 font-bold">+{ref.rewardAmount || 100} BIX</p>
+                        <p className="text-green-400 font-bold">+{ref.reward_amount || 100} BIX</p>
                         <Badge variant="outline" className="text-[10px] text-muted-foreground">Referral Bonus</Badge>
                       </div>
                     </div>

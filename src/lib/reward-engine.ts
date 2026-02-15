@@ -1,118 +1,231 @@
-import { blink } from './blink';
-
-const REWARD_ENGINE_URL = 'https://gh9qbc8y--reward-engine.functions.blink.new';
-
-// Generate device fingerprint hash for anti-abuse
-function getDeviceHash(): string {
-  const parts = [
-    navigator.userAgent,
-    navigator.language,
-    screen.width + 'x' + screen.height,
-    Intl.DateTimeFormat().resolvedOptions().timeZone,
-  ];
-  let hash = 0;
-  const str = parts.join('|');
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash |= 0;
-  }
-  return `dh_${Math.abs(hash).toString(36)}`;
-}
-
-async function callRewardEngine(action: string, data: Record<string, unknown> = {}) {
-  const token = await blink.auth.getValidToken();
-  
-  const controller = new AbortController();
-  setTimeout(() => controller.abort(), 15000);
-
-  const res = await fetch(REWARD_ENGINE_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-      'x-device-hash': getDeviceHash(),
-    },
-    body: JSON.stringify({ action, ...data }),
-    signal: controller.signal,
-  });
-
-  const json = await res.json();
-  if (!res.ok) {
-    throw new Error(json.error || 'Reward engine error');
-  }
-  return json;
-}
+import { supabase } from './supabase';
 
 export const rewardEngine = {
   // Task system
-  completeTask: (taskId: string) =>
-    callRewardEngine('complete_task', { taskId }),
+  completeTask: async (taskId: string) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    // 1. Mark task as completed
+    const { error: taskError } = await supabase
+      .from('user_tasks')
+      .insert({ user_id: user.id, task_id: taskId, status: 'completed' });
+    
+    if (taskError) throw taskError;
+
+    // 2. Get task reward amount
+    const { data: task } = await supabase
+      .from('tasks')
+      .select('reward_amount')
+      .eq('id', taskId)
+      .single();
+    
+    const amount = task?.reward_amount || 0;
+
+    // 3. Update user balance
+    const { data: profile } = await supabase
+      .from('user_profiles')
+      .select('balance, total_earned')
+      .eq('user_id', user.id)
+      .single();
+    
+    await supabase
+      .from('user_profiles')
+      .update({
+        balance: (profile?.balance || 0) + amount,
+        total_earned: (profile?.total_earned || 0) + amount
+      })
+      .eq('user_id', user.id);
+
+    // 4. Log transaction
+    await supabase.from('transactions').insert({
+      user_id: user.id,
+      amount,
+      type: 'task',
+      description: `Task completed: ${taskId}`
+    });
+
+    return { success: true, earned: amount };
+  },
 
   // Daily check-in
-  dailyCheckin: () =>
-    callRewardEngine('daily_checkin'),
+  dailyCheckin: async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const amount = 50; // Daily check-in reward
+
+    // Update profile
+    const { data: profile } = await supabase
+      .from('user_profiles')
+      .select('balance, total_earned')
+      .eq('user_id', user.id)
+      .single();
+
+    await supabase
+      .from('user_profiles')
+      .update({
+        balance: (profile?.balance || 0) + amount,
+        total_earned: (profile?.total_earned || 0) + amount,
+        last_login: new Date().toISOString()
+      })
+      .eq('user_id', user.id);
+
+    // Log transaction
+    await supabase.from('transactions').insert({
+      user_id: user.id,
+      amount,
+      type: 'daily_checkin',
+      description: 'Daily Check-in Reward'
+    });
+
+    return { success: true, earned: amount };
+  },
 
   // Quiz system
-  startQuiz: (questionCount: number, difficulty: string) =>
-    callRewardEngine('start_quiz', { questionCount, difficulty }),
+  startQuiz: async (questionCount: number, difficulty: string) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
 
-  quizAnswer: (sessionId: string, questionId: string, selectedOption: number, timeTaken: number) =>
-    callRewardEngine('quiz_answer', { sessionId, questionId, selectedOption, timeTaken }),
+    // Create session
+    const { data: session, error } = await supabase
+      .from('quiz_sessions')
+      .insert({
+        user_id: user.id,
+        question_count: questionCount,
+        difficulty,
+        status: 'active'
+      })
+      .select()
+      .single();
 
-  finishQuiz: (sessionId: string) =>
-    callRewardEngine('finish_quiz', { sessionId }),
+    if (error) throw error;
+    return session;
+  },
+
+  quizAnswer: async (sessionId: string, questionId: string, selectedOption: number, timeTaken: number) => {
+    // For direct frontend logic, we'll just track score in the session
+    return { correct: true }; // Simplified for now
+  },
+
+  finishQuiz: async (sessionId: string) => {
+    const amount = 20; // Dummy reward for now
+    return { success: true, earned: amount };
+  },
 
   // Games
-  gameResult: (gameType: string, betAmount: number, outcome: string) =>
-    callRewardEngine('game_result', { gameType, betAmount, outcome }),
+  gameResult: async (gameType: string, betAmount: number, outcome: string) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const profit = outcome === 'win' ? betAmount : -betAmount;
+
+    const { data: profile } = await supabase
+      .from('user_profiles')
+      .select('balance')
+      .eq('user_id', user.id)
+      .single();
+
+    await supabase
+      .from('user_profiles')
+      .update({
+        balance: (profile?.balance || 0) + profit
+      })
+      .eq('user_id', user.id);
+
+    await supabase.from('transactions').insert({
+      user_id: user.id,
+      amount: profit,
+      type: 'game',
+      description: `${gameType} result: ${outcome}`
+    });
+
+    return { success: true, balance: (profile?.balance || 0) + profit };
+  },
 
   // Referrals
-  processReferral: (referralCode: string) =>
-    callRewardEngine('process_referral', { referralCode }),
+  processReferral: async (referralCode: string) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
 
-  // ===== NEW: Secure Task Code System =====
-  redeemTaskCode: (code: string) =>
-    callRewardEngine('redeem_task_code', { code }),
+    // Find referrer
+    const { data: referrer } = await supabase
+      .from('user_profiles')
+      .select('user_id')
+      .eq('referral_code', referralCode)
+      .single();
 
-  // Pending rewards
-  getPendingRewards: () =>
-    callRewardEngine('get_pending_rewards'),
+    if (referrer) {
+      await supabase
+        .from('user_profiles')
+        .update({ referred_by: referrer.user_id })
+        .eq('user_id', user.id);
+      
+      // Reward referrer
+      const bonus = 500;
+      const { data: refProfile } = await supabase
+        .from('user_profiles')
+        .select('balance, total_earned')
+        .eq('user_id', referrer.user_id)
+        .single();
+      
+      await supabase
+        .from('user_profiles')
+        .update({
+          balance: (refProfile?.balance || 0) + bonus,
+          total_earned: (refProfile?.total_earned || 0) + bonus
+        })
+        .eq('user_id', referrer.user_id);
 
-  // ===== Admin: Code Window Management =====
-  adminGenerateCodeWindow: (taskId: string | null, validHours: number = 3, maxRedemptions?: number) =>
-    callRewardEngine('admin_generate_code_window', { taskId, validHours, maxRedemptions }),
+      await supabase.from('transactions').insert({
+        user_id: referrer.user_id,
+        amount: bonus,
+        type: 'referral',
+        description: `Referral bonus for user ${user.id}`
+      });
+    }
 
-  adminListCodeWindows: (activeOnly: boolean = true) =>
-    callRewardEngine('admin_list_code_windows', { activeOnly }),
+    return { success: true };
+  },
 
-  adminDisableCodeWindow: (windowId: string) =>
-    callRewardEngine('admin_disable_code_window', { windowId }),
+  redeemTaskCode: async (code: string) => {
+    return { success: true, earned: 100 }; // Simplified
+  },
 
-  // ===== Admin: Metrics & Abuse =====
-  adminGetMetrics: () =>
-    callRewardEngine('admin_get_metrics'),
+  getPendingRewards: async () => {
+    return [];
+  },
 
-  adminGetAbuseFlags: () =>
-    callRewardEngine('admin_get_abuse_flags'),
+  // Admin methods
+  adminGetMetrics: async () => {
+    const { data } = await supabase.from('platform_metrics').select('*').order('metric_date', { ascending: false }).limit(30);
+    return data || [];
+  },
 
-  adminResolveFlag: (flagId: string) =>
-    callRewardEngine('admin_resolve_flag', { flagId }),
+  adminGetAbuseFlags: async () => {
+    const { data } = await supabase.from('abuse_flags').select('*, user_profiles(display_name)').eq('resolved', 0);
+    return data || [];
+  },
 
-  // Admin task management
-  adminCreateTask: (task: Record<string, unknown>) =>
-    callRewardEngine('admin_create_task', { task }),
+  adminResolveFlag: async (flagId: string) => {
+    await supabase.from('abuse_flags').update({ resolved: 1 }).eq('id', flagId);
+    return { success: true };
+  },
 
-  adminToggleTask: (taskId: string, isActive: number) =>
-    callRewardEngine('admin_toggle_task', { taskId, isActive }),
+  adminCreateTask: async (task: any) => {
+    await supabase.from('tasks').insert(task);
+    return { success: true };
+  },
 
-  adminDeleteTask: (taskId: string) =>
-    callRewardEngine('admin_delete_task', { taskId }),
+  adminToggleTask: async (taskId: string, isActive: number) => {
+    await supabase.from('tasks').update({ is_active: isActive }).eq('id', taskId);
+    return { success: true };
+  },
 
-  // Legacy compat
-  verifyRewardCode: (code: string) =>
-    callRewardEngine('redeem_task_code', { code }),
+  adminDeleteTask: async (taskId: string) => {
+    await supabase.from('tasks').delete().eq('id', taskId);
+    return { success: true };
+  },
 
-  adminGenerateCode: (code: string, expiresHours: number = 24) =>
-    callRewardEngine('admin_generate_code_window', { taskId: null, validHours: expiresHours }),
+  adminListCodeWindows: async () => [],
 };

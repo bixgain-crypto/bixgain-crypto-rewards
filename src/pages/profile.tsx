@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../hooks/use-auth';
-import { blink } from '../lib/blink';
+import { supabase } from '../lib/supabase';
 import { DashboardLayout } from '../components/dashboard-layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -14,7 +14,7 @@ import { toast } from 'sonner';
 export default function ProfilePage() {
   const { user, profile, refreshProfile } = useAuth();
   const [editing, setEditing] = useState(false);
-  const [displayName, setDisplayName] = useState(profile?.displayName || '');
+  const [displayName, setDisplayName] = useState(profile?.display_name || '');
 
   const level = profile?.level || Math.floor((profile?.xp || 0) / 1000000) + 1;
   const xpInLevel = (profile?.xp || 0) % 1000000;
@@ -23,9 +23,13 @@ export default function ProfilePage() {
   const handleSave = async () => {
     if (!user || !displayName.trim()) return;
     try {
-      // Use the actual profile record id (not user.id) since user_profiles PK is user_id
-      const recordId = profile?.id || user.id;
-      await blink.db.table('user_profiles').update(recordId, { displayName: displayName.trim() });
+      const { error } = await supabase
+        .from('user_profiles')
+        .update({ display_name: displayName.trim() })
+        .eq('user_id', user.id);
+      
+      if (error) throw error;
+      
       toast.success('Profile updated!');
       setEditing(false);
       refreshProfile();
@@ -35,10 +39,10 @@ export default function ProfilePage() {
   };
 
   const stats = [
-    { label: 'Total Earned', value: `${(profile?.totalEarned || 0).toLocaleString()} BIX`, icon: Coins, color: 'text-primary' },
-    { label: 'Daily Streak', value: `${profile?.dailyStreak || 0} Days`, icon: Zap, color: 'text-orange-400' },
+    { label: 'Total Earned', value: `${(profile?.total_earned || 0).toLocaleString()} BIX`, icon: Coins, color: 'text-primary' },
+    { label: 'Daily Streak', value: `${profile?.daily_streak || 0} Days`, icon: Zap, color: 'text-orange-400' },
     { label: 'Miner Level', value: `Level ${level}`, icon: Trophy, color: 'text-yellow-400' },
-    { label: 'Member Since', value: profile?.createdAt ? new Date(profile.createdAt).toLocaleDateString() : 'N/A', icon: Calendar, color: 'text-sky-400' },
+    { label: 'Member Since', value: profile?.created_at ? new Date(profile.created_at).toLocaleDateString() : 'N/A', icon: Calendar, color: 'text-sky-400' },
   ];
 
   return (
@@ -134,11 +138,11 @@ export default function ProfilePage() {
               </div>
               <div className="p-4 rounded-xl bg-muted/30 border border-border/50">
                 <p className="text-xs text-muted-foreground uppercase font-semibold mb-1">Referral Code</p>
-                <p className="text-sm font-mono">{profile?.referralCode || 'N/A'}</p>
+                <p className="text-sm font-mono">{profile?.referral_code || 'N/A'}</p>
               </div>
               <div className="p-4 rounded-xl bg-muted/30 border border-border/50">
                 <p className="text-xs text-muted-foreground uppercase font-semibold mb-1">Last Login</p>
-                <p className="text-sm">{profile?.lastLogin || 'Never'}</p>
+                <p className="text-sm">{profile?.last_login || 'Never'}</p>
               </div>
               <div className="p-4 rounded-xl bg-muted/30 border border-border/50">
                 <p className="text-xs text-muted-foreground uppercase font-semibold mb-1">Account Role</p>

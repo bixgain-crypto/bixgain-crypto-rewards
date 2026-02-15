@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { blink } from '../lib/blink';
+import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/use-auth';
 import { fetchSharedData } from '../lib/shared-data';
 import { rewardEngine } from '../lib/reward-engine';
@@ -48,14 +48,15 @@ export default function QuestsPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [taskList, userTasks, pendingRes] = await Promise.all([
+        const [taskList, userTasksRes, pendingRes] = await Promise.all([
           fetchSharedData('tasks'),
-          user ? blink.db.table('user_tasks').list({ where: { userId: user.id, status: 'completed' } }) : Promise.resolve([]),
-          user ? rewardEngine.getPendingRewards() : Promise.resolve({ pending: [] })
+          user ? supabase.from('user_tasks').select('task_id').eq('user_id', user.id).eq('status', 'completed') : Promise.resolve({ data: [] }),
+          user ? rewardEngine.getPendingRewards() : Promise.resolve([])
         ]);
-        setTasks(taskList);
-        setCompletedTaskIds(new Set(userTasks.map((ut: any) => ut.taskId)));
-        setPendingRewards(pendingRes.pending || []);
+        setTasks(taskList || []);
+        const userTasks = (userTasksRes as any).data || [];
+        setCompletedTaskIds(new Set(userTasks.map((ut: any) => ut.task_id)));
+        setPendingRewards(pendingRes || []);
       } catch (err) {
         console.error('Error fetching quests:', err);
       } finally {
@@ -131,7 +132,7 @@ export default function QuestsPage() {
       }
 
       setCompletedTaskIds(prev => new Set([...prev, task.id]));
-      toast.success(`${result.message} (+${result.xp} XP)`);
+      toast.success(`Reward claimed! (+${result.earned} BIX)`);
       refreshProfile();
     } catch (err: any) {
       toast.error(err.message || 'Failed to complete task.');
@@ -144,9 +145,9 @@ export default function QuestsPage() {
   const isAdmin = profile?.role === 'admin' || user?.email === 'bixgain@gmail.com';
 
   // Map all tasks to categories for display
-  const socialTasks = tasks.filter(t => ['social', 'watch', 'sponsored', 'quiz'].includes(t.category) && t.taskType !== 'daily' && t.category !== 'daily');
+  const socialTasks = tasks.filter(t => ['social', 'watch', 'sponsored', 'quiz'].includes(t.category) && t.task_type !== 'daily' && t.category !== 'daily');
   const milestoneTasks = tasks.filter(t => ['milestone', 'referral'].includes(t.category));
-  const dailyTasks = tasks.filter(t => t.taskType === 'daily' || t.category === 'daily');
+  const dailyTasks = tasks.filter(t => t.task_type === 'daily' || t.category === 'daily');
   const otherTasks = tasks.filter(t => 
     !socialTasks.includes(t) && 
     !milestoneTasks.includes(t) && 
@@ -177,18 +178,18 @@ export default function QuestsPage() {
               <div className="flex items-center gap-2 mb-1">
                 <h3 className="text-xl font-bold">{task.title}</h3>
                 <Badge variant="secondary" className="capitalize text-[10px]">{task.category}</Badge>
-                {task.taskType === 'daily' && <Badge className="gold-gradient border-none text-[10px]">DAILY</Badge>}
+                {task.task_type === 'daily' && <Badge className="gold-gradient border-none text-[10px]">DAILY</Badge>}
               </div>
               <p className="text-muted-foreground max-w-lg">{task.description}</p>
               {isLocked && (
-                <p className="text-xs text-orange-400 mt-1">Requires Level {task.requiredLevel}</p>
+                <p className="text-xs text-orange-400 mt-1">Requires Level {task.required_level}</p>
               )}
             </div>
           </div>
           <div className="flex items-center gap-6 w-full md:w-auto shrink-0">
             <div className="text-right">
-              <p className="text-2xl font-display font-bold text-primary">+{task.rewardAmount} BIX</p>
-              <p className="text-xs text-muted-foreground">{task.xpReward ? `+${task.xpReward} XP` : 'Instant Reward'}</p>
+              <p className="text-2xl font-display font-bold text-primary">+{task.reward_amount} BIX</p>
+              <p className="text-xs text-muted-foreground">{task.xp_reward ? `+${task.xp_reward} XP` : 'Instant Reward'}</p>
             </div>
             {isCompleted ? (
               <Button disabled className="bg-green-500/20 text-green-400 border border-green-500/30 font-bold gap-2">
