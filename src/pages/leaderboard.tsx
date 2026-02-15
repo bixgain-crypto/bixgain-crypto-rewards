@@ -9,10 +9,12 @@ import { Trophy, Medal, Search, TrendingUp, Sparkles, Coins } from 'lucide-react
 import { Avatar, AvatarFallback } from '../components/ui/avatar';
 import { Badge } from '../components/ui/badge';
 import { Input } from '../components/ui/input';
+import { useNavigate } from 'react-router-dom';
 
 export default function LeaderboardPage() {
-  const { profile } = useAuth();
+  const { profile, userLevel } = useAuth();
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const fetchLeaderboard = async () => {
@@ -138,7 +140,7 @@ export default function LeaderboardPage() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <span className="text-muted-foreground">Lvl {profile.level || Math.floor((profile.xp || 0) / 1000000) + 1}</span>
+                      <span className="text-muted-foreground">Lvl {userLevel}</span>
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1 font-bold text-primary">
@@ -162,7 +164,7 @@ export default function LeaderboardPage() {
             "The top 10 miners at the end of every month receive exclusive BixGain NFT badges and real crypto airdrops. Keep mining!"
           </p>
           <div className="flex gap-4">
-            <Button className="gold-gradient px-8 font-bold">Earn More BIX</Button>
+            <Button className="gold-gradient px-8 font-bold" onClick={() => navigate('/earn')}>Earn More BIX</Button>
             <Button variant="outline" className="border-white/10 hover:bg-white/5">Season Schedule</Button>
           </div>
         </div>

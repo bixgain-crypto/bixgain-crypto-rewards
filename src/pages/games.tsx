@@ -5,6 +5,7 @@ import { DashboardLayout } from '../components/dashboard-layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
+import { useNavigate } from 'react-router-dom';
 import { Gamepad2, TrendingUp, Sparkles, Zap, Users, Dices } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -12,6 +13,7 @@ export default function GamesPage() {
   const { profile, user, refreshProfile } = useAuth();
   const [betAmount, setBetAmount] = useState(50);
   const [isSpinning, setIsSpinning] = useState(false);
+  const navigate = useNavigate();
 
   const handlePlayRoulette = async () => {
     if (!user || (profile?.balance || 0) < betAmount) {
@@ -146,7 +148,7 @@ export default function GamesPage() {
               </CardHeader>
             </Card>
 
-            <Card className="glass-card hover:border-primary/20 transition-all cursor-pointer" onClick={() => (window.location.href = '/coinflip')}>
+            <Card className="glass-card hover:border-primary/20 transition-all cursor-pointer" onClick={() => navigate('/coinflip')}>
               <CardHeader className="flex flex-row items-center gap-4">
                 <div className="p-3 rounded-xl bg-primary/10">
                   <Zap className="h-6 w-6 text-primary" />

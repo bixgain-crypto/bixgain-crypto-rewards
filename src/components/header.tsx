@@ -5,7 +5,7 @@ import { Input } from './ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 
 export function Header() {
-  const { profile, user } = useAuth();
+  const { profile, user, userLevel } = useAuth();
 
   return (
     <header className="h-16 border-b border-border bg-card/50 backdrop-blur-md px-4 lg:px-8 flex items-center justify-between sticky top-0 z-30">
@@ -31,7 +31,7 @@ export function Header() {
         <div className="flex items-center gap-3 ml-2 pl-4 border-l border-border">
           <div className="hidden lg:block text-right">
             <p className="text-sm font-medium">{profile?.display_name || 'User'}</p>
-            <p className="text-xs text-muted-foreground">Level 1 Miner</p>
+            <p className="text-xs text-muted-foreground">Level {userLevel} Miner</p>
           </div>
           <Avatar className="h-9 w-9 border-2 border-primary/20">
             <AvatarImage src={user?.user_metadata?.avatar_url} />

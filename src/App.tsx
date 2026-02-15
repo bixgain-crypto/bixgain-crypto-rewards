@@ -11,19 +11,10 @@ import AdminPanel from './pages/admin';
 import ProfilePage from './pages/profile';
 import QuizPlayPage from './pages/quiz-play';
 import CoinFlipPage from './pages/coinflip';
-import { useState, useEffect } from 'react';
+import { Routes, Route, Navigate } from 'react-router-dom';
 
 function App() {
   const { isAuthenticated, isLoading } = useAuth();
-  const [currentPath, setCurrentPath] = useState(window.location.pathname);
-
-  useEffect(() => {
-    const handleLocationChange = () => {
-      setCurrentPath(window.location.pathname);
-    };
-    window.addEventListener('popstate', handleLocationChange);
-    return () => window.removeEventListener('popstate', handleLocationChange);
-  }, []);
 
   if (isLoading) {
     return (
@@ -34,28 +25,29 @@ function App() {
   }
 
   if (!isAuthenticated) {
-    // Show landing page for unauthenticated users (referral params preserved via login())
-    return <LandingPage />;
+    return (
+      <Routes>
+        <Route path="*" element={<LandingPage />} />
+      </Routes>
+    );
   }
 
-  const renderPage = () => {
-    switch (currentPath) {
-      case '/': return <DashboardPage />;
-      case '/wallet': return <WalletPage />;
-      case '/games': return <GamesPage />;
-      case '/store': return <StorePage />;
-      case '/referrals': return <ReferralsPage />;
-      case '/leaderboard': return <LeaderboardPage />;
-      case '/earn': return <QuestsPage />;
-      case '/quiz': return <QuizPlayPage />;
-      case '/coinflip': return <CoinFlipPage />;
-      case '/profile': return <ProfilePage />;
-      case '/admin': return <AdminPanel />;
-      default: return <DashboardPage />;
-    }
-  };
-
-  return renderPage();
+  return (
+    <Routes>
+      <Route path="/" element={<DashboardPage />} />
+      <Route path="/wallet" element={<WalletPage />} />
+      <Route path="/games" element={<GamesPage />} />
+      <Route path="/store" element={<StorePage />} />
+      <Route path="/referrals" element={<ReferralsPage />} />
+      <Route path="/leaderboard" element={<LeaderboardPage />} />
+      <Route path="/earn" element={<QuestsPage />} />
+      <Route path="/quiz" element={<QuizPlayPage />} />
+      <Route path="/coinflip" element={<CoinFlipPage />} />
+      <Route path="/profile" element={<ProfilePage />} />
+      <Route path="/admin" element={<AdminPanel />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
 }
 
 export default App;

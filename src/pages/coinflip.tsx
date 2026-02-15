@@ -5,6 +5,7 @@ import { DashboardLayout } from '../components/dashboard-layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
+import { useNavigate } from 'react-router-dom';
 import { Coins, Zap, ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -17,6 +18,7 @@ export default function CoinFlipPage() {
   const [isFlipping, setIsFlipping] = useState(false);
   const [result, setResult] = useState<CoinSide | null>(null);
   const [won, setWon] = useState<boolean | null>(null);
+  const navigate = useNavigate();
 
   const handleFlip = async () => {
     if (!user || !profile || profile.balance < betAmount) {
@@ -57,7 +59,7 @@ export default function CoinFlipPage() {
     <DashboardLayout activePath="/games">
       <div className="max-w-xl mx-auto space-y-6">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => (window.location.href = '/games')} className="text-muted-foreground hover:text-foreground">
+          <Button variant="ghost" size="icon" onClick={() => navigate('/games')} className="text-muted-foreground hover:text-foreground">
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>

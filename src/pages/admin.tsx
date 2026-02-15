@@ -12,6 +12,7 @@ import { Badge } from '../components/ui/badge';
 import { Label } from '../components/ui/label';
 import { Textarea } from '../components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { useNavigate } from 'react-router-dom';
 import {
   Dialog,
   DialogContent,
@@ -44,6 +45,7 @@ export default function AdminPanel() {
     required_level: 0,
     link: '',
   });
+  const navigate = useNavigate();
 
   const isAdmin = profile?.role === 'admin' || user?.email === 'bixgain@gmail.com';
 
@@ -126,7 +128,7 @@ export default function AdminPanel() {
           <ShieldAlert className="h-16 w-16 text-red-500 mb-4" />
           <h1 className="text-3xl font-bold mb-2">Access Denied</h1>
           <p className="text-muted-foreground">You do not have administrative privileges.</p>
-          <Button className="mt-6" onClick={() => window.location.href = '/'}>Return Dashboard</Button>
+          <Button className="mt-6" onClick={() => navigate('/')}>Return Dashboard</Button>
         </div>
       </DashboardLayout>
     );

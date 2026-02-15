@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Progress } from '../components/ui/progress';
+import { useNavigate } from 'react-router-dom';
 import { BrainCircuit, CheckCircle2, XCircle, ArrowRight, Coins, Trophy, RotateCcw, Timer, Zap } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -21,6 +22,7 @@ type GameState = 'setup' | 'playing' | 'finished';
 
 export default function QuizPlayPage() {
   const { refreshProfile } = useAuth();
+  const navigate = useNavigate();
 
   // Setup state
   const [gameState, setGameState] = useState<GameState>('setup');
@@ -302,7 +304,7 @@ export default function QuizPlayPage() {
                 <Button onClick={handleRestart} variant="outline" className="gap-2 border-primary/30 text-primary hover:bg-primary/10">
                   <RotateCcw className="h-4 w-4" /> Play Again
                 </Button>
-                <Button onClick={() => (window.location.href = '/earn')} className="gold-gradient font-bold">
+                <Button onClick={() => navigate('/earn')} className="gold-gradient font-bold">
                   Back to Quests
                 </Button>
               </div>
