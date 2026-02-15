@@ -1,6 +1,6 @@
 import { blink } from './blink';
 
-const REWARD_ENGINE_URL = 'https://x79bsxgw--bix-reward-engine.functions.blink.new';
+const REWARD_ENGINE_URL = 'https://gh9qbc8y--reward-engine.functions.blink.new';
 
 // Generate device fingerprint hash for anti-abuse
 function getDeviceHash(): string {
@@ -98,6 +98,16 @@ export const rewardEngine = {
 
   adminResolveFlag: (flagId: string) =>
     callRewardEngine('admin_resolve_flag', { flagId }),
+
+  // Admin task management
+  adminCreateTask: (task: Record<string, unknown>) =>
+    callRewardEngine('admin_create_task', { task }),
+
+  adminToggleTask: (taskId: string, isActive: number) =>
+    callRewardEngine('admin_toggle_task', { taskId, isActive }),
+
+  adminDeleteTask: (taskId: string) =>
+    callRewardEngine('admin_delete_task', { taskId }),
 
   // Legacy compat
   verifyRewardCode: (code: string) =>

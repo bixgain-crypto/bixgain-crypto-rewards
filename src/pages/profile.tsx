@@ -23,7 +23,9 @@ export default function ProfilePage() {
   const handleSave = async () => {
     if (!user || !displayName.trim()) return;
     try {
-      await blink.db.userProfiles.update(user.id, { displayName: displayName.trim() });
+      // Use the actual profile record id (not user.id) since user_profiles PK is user_id
+      const recordId = profile?.id || user.id;
+      await blink.db.table('user_profiles').update(recordId, { displayName: displayName.trim() });
       toast.success('Profile updated!');
       setEditing(false);
       refreshProfile();

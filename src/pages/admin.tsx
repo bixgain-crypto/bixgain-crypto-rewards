@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { blink } from '../lib/blink';
 import { useAuth } from '../hooks/use-auth';
 import { fetchSharedData } from '../lib/shared-data';
 import { rewardEngine } from '../lib/reward-engine';
@@ -50,9 +49,10 @@ export default function AdminPanel() {
 
   const fetchData = async () => {
     try {
+      // Use shared-data edge function (service-role) to bypass RLS for admin reads
       const [userList, taskList] = await Promise.all([
-        blink.db.userProfiles.list({ limit: 50, orderBy: { balance: 'desc' } }),
-        blink.db.tasks.list({ orderBy: { createdAt: 'desc' } }),
+        fetchSharedData('user_profiles', 50),
+        fetchSharedData('tasks'),
       ]);
       setUsers(userList);
       setTasks(taskList);
@@ -75,10 +75,7 @@ export default function AdminPanel() {
 
     setCreatingTask(true);
     try {
-      await blink.db.tasks.create({
-        ...newTask,
-        isActive: 1,
-      });
+      await rewardEngine.adminCreateTask(newTask);
       toast.success('Task created successfully');
       setIsCreateDialogOpen(false);
       setNewTask({
@@ -101,7 +98,7 @@ export default function AdminPanel() {
 
   const handleToggleTaskStatus = async (taskId: string, currentStatus: number) => {
     try {
-      await blink.db.tasks.update(taskId, { isActive: currentStatus > 0 ? 0 : 1 });
+      await rewardEngine.adminToggleTask(taskId, currentStatus > 0 ? 0 : 1);
       toast.success('Task status updated');
       fetchData();
     } catch (err: any) {
@@ -112,7 +109,7 @@ export default function AdminPanel() {
   const handleDeleteTask = async (taskId: string) => {
     if (!confirm('Are you sure you want to delete this task?')) return;
     try {
-      await blink.db.tasks.delete(taskId);
+      await rewardEngine.adminDeleteTask(taskId);
       toast.success('Task deleted');
       fetchData();
     } catch (err: any) {

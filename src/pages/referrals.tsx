@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { blink } from '../lib/blink';
 import { useAuth } from '../hooks/use-auth';
+import { fetchSharedData } from '../lib/shared-data';
 import { DashboardLayout } from '../components/dashboard-layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -19,14 +19,13 @@ export default function ReferralsPage() {
     const fetchReferrals = async () => {
       if (!user) return;
       try {
-        // Use user's own referral history (RLS filters to their records)
-        const history = await blink.db.table('referral_history').list({
-          where: { referrerId: user.id },
-          orderBy: { createdAt: 'desc' },
-          limit: 20,
-        });
-        setReferralHistory(history);
-        setReferralCount(history.length);
+        // Use shared-data edge function (service-role) to bypass RLS
+        // referral_history user_id='system' so RLS blocks client-side reads
+        const allHistory = await fetchSharedData('referral_history');
+        // Filter to current user's referrals
+        const myReferrals = allHistory.filter((r: any) => r.referrerId === user.id);
+        setReferralHistory(myReferrals);
+        setReferralCount(myReferrals.length);
       } catch {
         // referral_history may be empty
       }

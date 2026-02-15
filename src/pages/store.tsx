@@ -36,7 +36,9 @@ export default function StorePage() {
     }
 
     try {
-      await blink.db.table('user_profiles').update(user.id, {
+      // Use the actual profile record id (not user.id)
+      const recordId = profile?.id || user.id;
+      await blink.db.table('user_profiles').update(recordId, {
         balance: profile.balance - item.price,
       });
 

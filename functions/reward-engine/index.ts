@@ -97,7 +97,9 @@ async function updateUserBalanceAndXP(blink: any, userId: string, data: { balanc
     level: newLevel,
   };
 
-  await blink.db.table("user_profiles").update(userId, updateData);
+  // Use the actual record id (not userId) since user_profiles PK is user_id but SDK updates by id column
+  const recordId = profile.id || profile.userId;
+  await blink.db.table("user_profiles").update(recordId, updateData);
   
   return { ...profile, ...updateData, leveledUp };
 }
@@ -290,6 +292,12 @@ async function handler(req: Request): Promise<Response> {
         return await adminGetAbuseFlags(blink, userId);
       case "admin_resolve_flag":
         return await adminResolveFlag(blink, userId, body);
+      case "admin_create_task":
+        return await adminCreateTask(blink, userId, body);
+      case "admin_toggle_task":
+        return await adminToggleTask(blink, userId, body);
+      case "admin_delete_task":
+        return await adminDeleteTask(blink, userId, body);
       case "get_pending_rewards":
         return await getPendingRewards(blink, userId);
       // Legacy compat
@@ -822,14 +830,21 @@ async function processReferral(blink: any, newUserId: string, body: any, ipHash:
       rewardAmount: 0, // Will be set when qualified
     });
 
-    // 2. Update new user: mark referred_by + grant signup bonus
+    // 2. Mark referred_by on user profile (use profile record id)
+    const newUserProfile = newUserProfiles[0];
+    const newUserRecordId = newUserProfile?.id || newUserId;
+    await blink.db.table("user_profiles").update(newUserRecordId, {
+      referredBy: referrer.userId,
+    });
+
+    // 3. Grant signup bonus
     const updatedProfile = await updateUserBalanceAndXP(blink, newUserId, {
       balanceChange: NEW_USER_REWARD,
       earnedChange: NEW_USER_REWARD,
       xpChange: 100,
     });
 
-    // 3. Log new user transaction
+    // 4. Log new user transaction
     await blink.db.table("transactions").create({
       userId: newUserId,
       amount: NEW_USER_REWARD,
@@ -837,7 +852,7 @@ async function processReferral(blink: any, newUserId: string, body: any, ipHash:
       description: `Referral bonus: joined via ${referralCode}`,
     });
 
-    // 4. Schedule referrer reward with 24h delay
+    // 5. Schedule referrer reward with 24h delay
     const eligibleAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
     await blink.db.table("referral_commissions").create({
       id: `rc_signup_${Date.now()}_${referrer.userId.slice(-4)}`,
@@ -1006,7 +1021,8 @@ async function dailyCheckin(blink: any, userId: string) {
       xpChange: xpReward,
     });
 
-    await blink.db.table("user_profiles").update(userId, {
+    const checkinRecordId = profile.id || userId;
+    await blink.db.table("user_profiles").update(checkinRecordId, {
       lastLogin: today,
       dailyStreak: newStreak,
     });
@@ -1277,7 +1293,8 @@ async function gameResult(blink: any, userId: string, body: any) {
     });
   } else {
     // If they lost, only deduct balance
-    await blink.db.table("user_profiles").update(userId, {
+    const gameRecordId = profile.id || userId;
+    await blink.db.table("user_profiles").update(gameRecordId, {
       balance: (profile.balance || 0) + netChange,
     });
   }
@@ -1364,6 +1381,57 @@ async function adminResolveFlag(blink: any, userId: string, body: any) {
   });
 
   return jsonResponse({ success: true, message: "Flag resolved" });
+}
+
+// ===================== ADMIN TASK CRUD =====================
+
+async function adminCreateTask(blink: any, userId: string, body: any) {
+  if (!(await verifyAdmin(blink, userId))) {
+    return errorResponse("Admin access required", 403);
+  }
+
+  const { task } = body;
+  if (!task || !task.title) return errorResponse("Task title is required");
+
+  const newTask = await blink.db.table("tasks").create({
+    title: task.title,
+    description: task.description || "",
+    category: task.category || "social",
+    taskType: task.taskType || "one_time",
+    rewardAmount: task.rewardAmount || 100,
+    xpReward: task.xpReward || 50,
+    requiredLevel: task.requiredLevel || 0,
+    link: task.link || "",
+    isActive: 1,
+  });
+
+  return jsonResponse({ success: true, task: newTask, message: "Task created" });
+}
+
+async function adminToggleTask(blink: any, userId: string, body: any) {
+  if (!(await verifyAdmin(blink, userId))) {
+    return errorResponse("Admin access required", 403);
+  }
+
+  const { taskId, isActive } = body;
+  if (!taskId) return errorResponse("Missing taskId");
+
+  await blink.db.table("tasks").update(taskId, { isActive: isActive ?? 0 });
+
+  return jsonResponse({ success: true, message: "Task status updated" });
+}
+
+async function adminDeleteTask(blink: any, userId: string, body: any) {
+  if (!(await verifyAdmin(blink, userId))) {
+    return errorResponse("Admin access required", 403);
+  }
+
+  const { taskId } = body;
+  if (!taskId) return errorResponse("Missing taskId");
+
+  await blink.db.table("tasks").delete(taskId);
+
+  return jsonResponse({ success: true, message: "Task deleted" });
 }
 
 Deno.serve(handler);
