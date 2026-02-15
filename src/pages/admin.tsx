@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../hooks/use-auth';
-import { fetchSharedData } from '../lib/shared-data';
 import { rewardEngine } from '../lib/reward-engine';
 import { DashboardLayout } from '../components/dashboard-layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
@@ -21,42 +20,42 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "../components/ui/dialog";
-import { Settings, Users, Database, ShieldAlert, Plus, CheckCircle, XCircle, Key, BarChart3, AlertTriangle, Clock, Copy, Trash2 } from 'lucide-react';
+import { Settings, Users, Database, ShieldAlert, Plus, CheckCircle, XCircle, Key, BarChart3, AlertTriangle, Clock, Copy, Trash2, Shield, UserCog } from 'lucide-react';
 import { toast } from 'sonner';
 import AdminCodeManager from '../components/admin-code-manager';
 import AdminMetrics from '../components/admin-metrics';
 import AdminAbuseFlags from '../components/admin-abuse-flags';
 
 export default function AdminPanel() {
-  const { user, profile } = useAuth();
+  const { user, profile, isAdmin } = useAuth();
   const [users, setUsers] = useState<any[]>([]);
   const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [creatingTask, setCreatingTask] = useState(false);
+  const [updatingRole, setUpdatingRole] = useState<string | null>(null);
   const [newTask, setNewTask] = useState({
     title: '',
     description: '',
     category: 'social',
-    task_type: 'one-time',
-    reward_amount: 100,
-    xp_reward: 50,
-    required_level: 0,
+    taskType: 'one-time',
+    rewardAmount: 100,
+    xpReward: 50,
+    requiredLevel: 0,
     link: '',
   });
 
-  const isAdmin = profile?.role === 'admin' || user?.email === 'bixgain@gmail.com';
-
   const fetchData = async () => {
     try {
-      const [userList, taskList] = await Promise.all([
-        fetchSharedData('user_profiles', 50),
-        fetchSharedData('tasks'),
+      const [userRes, taskRes] = await Promise.all([
+        rewardEngine.adminListUsers(),
+        rewardEngine.adminListAllTasks(),
       ]);
-      setUsers(userList || []);
-      setTasks(taskList || []);
+      setUsers(userRes.users || []);
+      setTasks(taskRes.tasks || []);
     } catch (err) {
       console.error('Error fetching admin data:', err);
+      toast.error('Failed to load admin data. Make sure you have admin privileges.');
     } finally {
       setLoading(false);
     }
@@ -64,6 +63,7 @@ export default function AdminPanel() {
 
   useEffect(() => {
     if (isAdmin) fetchData();
+    else setLoading(false);
   }, [isAdmin]);
 
   const handleCreateTask = async () => {
@@ -74,20 +74,17 @@ export default function AdminPanel() {
 
     setCreatingTask(true);
     try {
-      await rewardEngine.adminCreateTask({
-        id: `task_${Math.random().toString(36).slice(2, 8)}`,
-        ...newTask
-      });
+      await rewardEngine.adminCreateTask(newTask);
       toast.success('Task created successfully');
       setIsCreateDialogOpen(false);
       setNewTask({
         title: '',
         description: '',
         category: 'social',
-        task_type: 'one-time',
-        reward_amount: 100,
-        xp_reward: 50,
-        required_level: 0,
+        taskType: 'one-time',
+        rewardAmount: 100,
+        xpReward: 50,
+        requiredLevel: 0,
         link: '',
       });
       fetchData();
@@ -100,7 +97,7 @@ export default function AdminPanel() {
 
   const handleToggleTaskStatus = async (taskId: string, currentStatus: number) => {
     try {
-      await rewardEngine.adminToggleTask(taskId, currentStatus > 0 ? 0 : 1);
+      await rewardEngine.adminToggleTask(taskId, currentStatus <= 0);
       toast.success('Task status updated');
       fetchData();
     } catch (err: any) {
@@ -116,6 +113,19 @@ export default function AdminPanel() {
       fetchData();
     } catch (err: any) {
       toast.error(err.message || 'Failed to delete task');
+    }
+  };
+
+  const handleSetUserRole = async (targetUserId: string, role: string) => {
+    setUpdatingRole(targetUserId);
+    try {
+      await rewardEngine.adminSetUserRole(targetUserId, role);
+      toast.success(`User role updated to ${role}`);
+      fetchData();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to update role');
+    } finally {
+      setUpdatingRole(null);
     }
   };
 
@@ -177,23 +187,46 @@ export default function AdminPanel() {
                       <TableHead>Total Earned</TableHead>
                       <TableHead>Streak</TableHead>
                       <TableHead>Role</TableHead>
+                      <TableHead className="text-right">Set Role</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {users.map((u) => (
-                      <TableRow key={u.user_id || u.id}>
-                        <TableCell className="font-mono text-xs">{(u.user_id || u.id || '').slice(-8)}</TableCell>
-                        <TableCell>{u.display_name || 'Miner'}</TableCell>
+                    {users.map((u) => {
+                      const uid = u.userId || u.id || '';
+                      const isSelf = uid === user?.id;
+                      return (
+                      <TableRow key={uid}>
+                        <TableCell className="font-mono text-xs">{uid.slice(-8)}</TableCell>
+                        <TableCell>{u.displayName || 'Miner'}{isSelf && <span className="text-xs text-primary ml-1">(you)</span>}</TableCell>
                         <TableCell className="font-bold text-primary">{Math.round(u.balance || 0)} BIX</TableCell>
-                        <TableCell>{Math.round(u.total_earned || 0)} BIX</TableCell>
-                        <TableCell>{u.daily_streak || 0} days</TableCell>
+                        <TableCell>{Math.round(u.totalEarned || 0)} BIX</TableCell>
+                        <TableCell>{u.dailyStreak || 0} days</TableCell>
                         <TableCell>
-                          <Badge variant={u.role === 'admin' ? 'default' : 'secondary'} className="text-[10px] uppercase">
+                          <Badge variant={u.role === 'admin' ? 'default' : u.role === 'moderator' ? 'outline' : 'secondary'} className="text-[10px] uppercase">
                             {u.role || 'user'}
                           </Badge>
                         </TableCell>
+                        <TableCell className="text-right">
+                          {!isSelf && (
+                            <Select
+                              value={u.role || 'user'}
+                              onValueChange={(val) => handleSetUserRole(uid, val)}
+                              disabled={updatingRole === uid}
+                            >
+                              <SelectTrigger className="h-8 w-[120px] text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="user">User</SelectItem>
+                                <SelectItem value="moderator">Moderator</SelectItem>
+                                <SelectItem value="admin">Admin</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          )}
+                        </TableCell>
                       </TableRow>
-                    ))}
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </CardContent>
@@ -261,8 +294,8 @@ export default function AdminPanel() {
                         <div className="grid gap-2">
                           <Label>Type</Label>
                           <Select
-                            value={newTask.task_type}
-                            onValueChange={(val) => setNewTask({ ...newTask, task_type: val })}
+                            value={newTask.taskType}
+                            onValueChange={(val) => setNewTask({ ...newTask, taskType: val })}
                           >
                             <SelectTrigger>
                               <SelectValue placeholder="Select type" />
@@ -281,8 +314,8 @@ export default function AdminPanel() {
                           <Input
                             id="reward"
                             type="number"
-                            value={newTask.reward_amount}
-                            onChange={(e) => setNewTask({ ...newTask, reward_amount: parseInt(e.target.value) || 0 })}
+                            value={newTask.rewardAmount}
+                            onChange={(e) => setNewTask({ ...newTask, rewardAmount: parseInt(e.target.value) || 0 })}
                           />
                         </div>
                         <div className="grid gap-2">
@@ -290,8 +323,8 @@ export default function AdminPanel() {
                           <Input
                             id="xp"
                             type="number"
-                            value={newTask.xp_reward}
-                            onChange={(e) => setNewTask({ ...newTask, xp_reward: parseInt(e.target.value) || 0 })}
+                            value={newTask.xpReward}
+                            onChange={(e) => setNewTask({ ...newTask, xpReward: parseInt(e.target.value) || 0 })}
                           />
                         </div>
                         <div className="grid gap-2">
@@ -299,8 +332,8 @@ export default function AdminPanel() {
                           <Input
                             id="level"
                             type="number"
-                            value={newTask.required_level}
-                            onChange={(e) => setNewTask({ ...newTask, required_level: parseInt(e.target.value) || 0 })}
+                            value={newTask.requiredLevel}
+                            onChange={(e) => setNewTask({ ...newTask, requiredLevel: parseInt(e.target.value) || 0 })}
                           />
                         </div>
                       </div>
@@ -338,12 +371,12 @@ export default function AdminPanel() {
                   <TableBody>
                     {tasks.map((t) => (
                       <TableRow key={t.id}>
-                        <TableCell className="text-xs text-muted-foreground">{(t.id || '').slice(-6)}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{t.id.slice(-6)}</TableCell>
                         <TableCell className="font-medium">{t.title}</TableCell>
-                        <TableCell className="font-bold text-primary">{t.reward_amount} BIX</TableCell>
+                        <TableCell className="font-bold text-primary">{t.rewardAmount} BIX</TableCell>
                         <TableCell className="capitalize text-xs">{t.category}</TableCell>
                         <TableCell>
-                          {Number(t.is_active) > 0 ? (
+                          {Number(t.isActive) > 0 ? (
                             <Badge className="bg-green-500/20 text-green-400 border-green-500/30">Active</Badge>
                           ) : (
                             <Badge className="bg-red-500/20 text-red-400 border-red-500/30">Inactive</Badge>
@@ -355,10 +388,10 @@ export default function AdminPanel() {
                               variant="ghost" 
                               size="icon" 
                               className="h-8 w-8"
-                              onClick={() => handleToggleTaskStatus(t.id, Number(t.is_active))}
-                              title={Number(t.is_active) > 0 ? "Deactivate" : "Activate"}
+                              onClick={() => handleToggleTaskStatus(t.id, Number(t.isActive))}
+                              title={Number(t.isActive) > 0 ? "Deactivate" : "Activate"}
                             >
-                              {Number(t.is_active) > 0 ? <XCircle className="h-4 w-4 text-orange-400" /> : <CheckCircle className="h-4 w-4 text-green-400" />}
+                              {Number(t.isActive) > 0 ? <XCircle className="h-4 w-4 text-orange-400" /> : <CheckCircle className="h-4 w-4 text-green-400" />}
                             </Button>
                             <Button 
                               variant="ghost" 

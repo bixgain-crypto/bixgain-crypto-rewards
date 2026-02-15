@@ -1,18 +1,29 @@
 import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
-import { supabase } from '../lib/supabase';
-import type { User as SupabaseUser } from '@supabase/supabase-js';
+import { blink } from '../lib/blink';
+import { rewardEngine } from '../lib/reward-engine';
+import type { BlinkUser } from '@blinkdotnew/sdk';
 
 interface AuthContextType {
-  user: SupabaseUser | null;
+  user: BlinkUser | null;
   profile: any | null;
   isAuthenticated: boolean;
+  isAdmin: boolean;
   isLoading: boolean;
-  login: () => Promise<void>;
+  login: (redirectUrl?: string) => void;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+// Admin emails that are always elevated to admin role
+const ADMIN_EMAILS = ['bixgain@gmail.com'];
+
+function isAdminUser(user: BlinkUser | null, profile: any | null): boolean {
+  if (profile?.role === 'admin') return true;
+  if (user?.email && ADMIN_EMAILS.includes(user.email)) return true;
+  return false;
+}
 
 // Extract referral code from URL (supports both /join?ref= and ?ref=)
 function getReferralCodeFromURL(): string | null {
@@ -32,7 +43,7 @@ function clearPendingReferral() {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<SupabaseUser | null>(null);
+  const [user, setUser] = useState<BlinkUser | null>(null);
   const [profile, setProfile] = useState<any | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -44,61 +55,77 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const fetchProfile = async (supabaseUser: SupabaseUser) => {
+  const fetchProfile = async (blinkUser: BlinkUser) => {
     try {
-      const { data: profiles, error } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .eq('user_id', supabaseUser.id);
-      
-      if (error) throw error;
-      const existingProfile = profiles && profiles.length > 0 ? profiles[0] : null;
+      const profiles = await blink.db.table('user_profiles').list({ where: { userId: blinkUser.id }, limit: 1 });
+      const existingProfile = profiles.length > 0 ? profiles[0] : null;
 
       if (existingProfile) {
         setProfile(existingProfile);
 
-        // Ensure bixgain@gmail.com is admin
-        if (supabaseUser.email === 'bixgain@gmail.com' && existingProfile.role !== 'admin') {
-          const { data: updatedProfile, error: updateError } = await supabase
-            .from('user_profiles')
-            .update({ role: 'admin' })
-            .eq('user_id', supabaseUser.id)
-            .select()
-            .single();
-          
-          if (!updateError && updatedProfile) {
-            setProfile(updatedProfile);
+        // Auto-elevate admin emails if they have a profile but not the admin role
+        if (blinkUser.email && ADMIN_EMAILS.includes(blinkUser.email) && existingProfile.role !== 'admin') {
+          try {
+            await blink.db.table('user_profiles').update(existingProfile.id, { role: 'admin' });
+            setProfile({ ...existingProfile, role: 'admin' });
+          } catch (err) {
+            console.error('Failed to auto-elevate admin:', err);
+          }
+        }
+
+        // Process pending referral for existing users who haven't been referred yet
+        if (!existingProfile.referredBy) {
+          const pendingRef = getPendingReferral();
+          if (pendingRef) {
+            try {
+              await rewardEngine.processReferral(pendingRef);
+              clearPendingReferral();
+              // Re-fetch profile to get updated balance
+              const updated = await blink.db.table('user_profiles').list({ where: { userId: blinkUser.id }, limit: 1 });
+              if (updated.length > 0) setProfile(updated[0]);
+            } catch {
+              // Referral may fail if invalid code, already referred, etc. — silently continue
+              clearPendingReferral();
+            }
           }
         }
       } else {
         // Create profile for new user
-        const referralCode = `BIX-${supabaseUser.id.slice(-6).toUpperCase()}`;
-        const isAdmin = supabaseUser.email === 'bixgain@gmail.com';
+        const referralCode = `BIX-${blinkUser.id.slice(-6).toUpperCase()}`;
+        const isAdmin = blinkUser.email ? ADMIN_EMAILS.includes(blinkUser.email) : false;
         
-        const { data: newProfile, error: createError } = await supabase
-          .from('user_profiles')
-          .insert({
-            user_id: supabaseUser.id,
-            display_name: supabaseUser.user_metadata?.display_name || 'Miner',
-            referral_code: referralCode,
-            balance: 100, // Welcome bonus
-            total_earned: 100,
-            xp: 0,
-            role: isAdmin ? 'admin' : 'user',
-          })
-          .select()
-          .single();
+        const newProfile = await blink.db.table('user_profiles').create({
+          userId: blinkUser.id,
+          displayName: blinkUser.displayName || 'Miner',
+          referralCode,
+          balance: 100, // Welcome bonus
+          totalEarned: 100,
+          xp: 0,
+          role: isAdmin ? 'admin' : 'user',
+        });
 
-        if (createError) throw createError;
-
-        await supabase.from('transactions').insert({
-          user_id: supabaseUser.id,
+        await blink.db.table('transactions').create({
+          userId: blinkUser.id,
           amount: 100,
           type: 'signup',
           description: 'Welcome Bonus',
         });
 
         setProfile(newProfile);
+
+        // Process referral for brand new user
+        const pendingRef = getPendingReferral();
+        if (pendingRef) {
+          try {
+            await rewardEngine.processReferral(pendingRef);
+            clearPendingReferral();
+            // Re-fetch to get updated balance
+            const updated = await blink.db.table('user_profiles').list({ where: { userId: blinkUser.id }, limit: 1 });
+            if (updated.length > 0) setProfile(updated[0]);
+          } catch {
+            clearPendingReferral();
+          }
+        }
       }
     } catch (err) {
       console.error('Error fetching profile:', err);
@@ -106,59 +133,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    // Initial session check
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchProfile(session.user);
-      }
-      setIsLoading(false);
-    });
-
-    // Auth state changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        await fetchProfile(session.user);
+    const unsubscribe = blink.auth.onAuthStateChanged(async (state) => {
+      setUser(state.user);
+      if (state.user) {
+        await fetchProfile(state.user);
       } else {
         setProfile(null);
       }
-      setIsLoading(false);
+      setIsLoading(state.isLoading);
     });
-
-    return () => subscription.unsubscribe();
+    return unsubscribe;
   }, []);
 
-  const login = async () => {
-    // For simplicity, using Google login
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: window.location.origin
-      }
-    });
-    if (error) console.error('Login error:', error.message);
+  const login = (redirectUrl?: string) => {
+    // Preserve referral code through login redirect
+    const currentRef = getPendingReferral() || getReferralCodeFromURL();
+    let target = redirectUrl || window.location.href;
+    if (currentRef && !target.includes('ref=')) {
+      const url = new URL(target);
+      url.searchParams.set('ref', currentRef);
+      target = url.toString();
+    }
+    blink.auth.login(target);
   };
 
   const logout = async () => {
-    await supabase.auth.signOut();
+    await blink.auth.signOut();
   };
 
   const refreshProfile = async () => {
     if (user) {
-      const { data: profiles } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .eq('user_id', user.id);
-      
-      if (profiles && profiles.length > 0) {
-        setProfile(profiles[0]);
-      }
+      const profiles = await blink.db.table('user_profiles').list({ where: { userId: user.id }, limit: 1 });
+      if (profiles.length > 0) setProfile(profiles[0]);
     }
   };
 
   return (
-    <AuthContext.Provider value={{ user, profile, isAuthenticated: !!user, isLoading, login, logout, refreshProfile }}>
+    <AuthContext.Provider value={{ user, profile, isAuthenticated: !!user, isAdmin: isAdminUser(user, profile), isLoading, login, logout, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );

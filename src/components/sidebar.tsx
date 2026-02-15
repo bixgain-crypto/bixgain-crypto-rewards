@@ -16,10 +16,8 @@ const navItems = [
 ];
 
 export function AppSidebar({ activePath }: { activePath: string }) {
-  const { logout, user, profile } = useAuth();
+  const { logout, user, profile, isAdmin } = useAuth();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
-
-  const isAdmin = profile?.role === 'admin' || user?.email === 'bixgain@gmail.com';
 
   return (
     <>

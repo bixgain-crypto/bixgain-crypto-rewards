@@ -13,7 +13,7 @@ interface QuizQuestion {
   id: string;
   question: string;
   options: string;
-  reward_amount: number;
+  rewardAmount: number;
   difficulty: string;
 }
 
@@ -352,7 +352,7 @@ export default function QuizPlayPage() {
         <Card className="glass-card">
           <CardHeader>
             <div className="flex items-center justify-between mb-2">
-              <Badge className="gold-gradient border-none">+{currentQuiz.reward_amount} BIX</Badge>
+              <Badge className="gold-gradient border-none">+{currentQuiz.rewardAmount} BIX</Badge>
               <Badge variant="outline" className="capitalize text-xs">{currentQuiz.difficulty || difficulty}</Badge>
             </div>
             <CardTitle className="text-xl leading-relaxed">{currentQuiz.question}</CardTitle>
@@ -400,7 +400,7 @@ export default function QuizPlayPage() {
             <div className="flex items-center gap-2">
               {isCorrect ? (
                 <Badge className="bg-green-500/20 text-green-400 border border-green-500/30 gap-1">
-                  <CheckCircle2 className="h-3 w-3" /> Correct! +{currentQuiz.reward_amount} BIX
+                  <CheckCircle2 className="h-3 w-3" /> Correct! +{currentQuiz.rewardAmount} BIX
                 </Badge>
               ) : (
                 <Badge className="bg-red-500/20 text-red-400 border border-red-500/30 gap-1">

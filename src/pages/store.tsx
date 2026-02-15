@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { blink } from '../lib/blink';
 import { useAuth } from '../hooks/use-auth';
 import { fetchSharedData } from '../lib/shared-data';
 import { DashboardLayout } from '../components/dashboard-layout';
@@ -19,7 +19,7 @@ export default function StorePage() {
     const fetchItems = async () => {
       try {
         const storeItems = await fetchSharedData('store_items');
-        setItems(storeItems || []);
+        setItems(storeItems);
       } catch (err) {
         console.error('Error fetching items:', err);
       } finally {
@@ -36,26 +36,20 @@ export default function StorePage() {
     }
 
     try {
-      const { error: profileError } = await supabase
-        .from('user_profiles')
-        .update({ balance: profile.balance - item.price })
-        .eq('user_id', user.id);
-      
-      if (profileError) throw profileError;
+      await blink.db.table('user_profiles').update(user.id, {
+        balance: profile.balance - item.price,
+      });
 
-      const { error: txError } = await supabase.from('transactions').insert({
-        user_id: user.id,
+      await blink.db.table('transactions').create({
+        userId: user.id,
         amount: -item.price,
         type: 'spend',
         description: `Purchased ${item.name} from Store`,
       });
-      
-      if (txError) throw txError;
 
       toast.success(`Successfully purchased ${item.name}!`);
       refreshProfile();
     } catch (err) {
-      console.error('Purchase error:', err);
       toast.error('Purchase failed.');
     }
   };
@@ -81,7 +75,7 @@ export default function StorePage() {
             <Card key={item.id} className="glass-card overflow-hidden group hover:border-primary/30 transition-all flex flex-col">
               <div className="aspect-square relative overflow-hidden">
                 <img 
-                  src={item.image_url} 
+                  src={item.imageUrl} 
                   alt={item.name}
                   className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" 
                 />

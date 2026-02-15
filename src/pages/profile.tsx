@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../hooks/use-auth';
-import { supabase } from '../lib/supabase';
+import { blink } from '../lib/blink';
 import { DashboardLayout } from '../components/dashboard-layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -14,7 +14,7 @@ import { toast } from 'sonner';
 export default function ProfilePage() {
   const { user, profile, refreshProfile } = useAuth();
   const [editing, setEditing] = useState(false);
-  const [displayName, setDisplayName] = useState(profile?.display_name || '');
+  const [displayName, setDisplayName] = useState(profile?.displayName || '');
 
   const level = profile?.level || Math.floor((profile?.xp || 0) / 1000000) + 1;
   const xpInLevel = (profile?.xp || 0) % 1000000;
@@ -23,13 +23,7 @@ export default function ProfilePage() {
   const handleSave = async () => {
     if (!user || !displayName.trim()) return;
     try {
-      const { error } = await supabase
-        .from('user_profiles')
-        .update({ display_name: displayName.trim() })
-        .eq('user_id', user.id);
-      
-      if (error) throw error;
-      
+      await blink.db.userProfiles.update(user.id, { displayName: displayName.trim() });
       toast.success('Profile updated!');
       setEditing(false);
       refreshProfile();
@@ -39,10 +33,10 @@ export default function ProfilePage() {
   };
 
   const stats = [
-    { label: 'Total Earned', value: `${(profile?.total_earned || 0).toLocaleString()} BIX`, icon: Coins, color: 'text-primary' },
-    { label: 'Daily Streak', value: `${profile?.daily_streak || 0} Days`, icon: Zap, color: 'text-orange-400' },
+    { label: 'Total Earned', value: `${(profile?.totalEarned || 0).toLocaleString()} BIX`, icon: Coins, color: 'text-primary' },
+    { label: 'Daily Streak', value: `${profile?.dailyStreak || 0} Days`, icon: Zap, color: 'text-orange-400' },
     { label: 'Miner Level', value: `Level ${level}`, icon: Trophy, color: 'text-yellow-400' },
-    { label: 'Member Since', value: profile?.created_at ? new Date(profile.created_at).toLocaleDateString() : 'N/A', icon: Calendar, color: 'text-sky-400' },
+    { label: 'Member Since', value: profile?.createdAt ? new Date(profile.createdAt).toLocaleDateString() : 'N/A', icon: Calendar, color: 'text-sky-400' },
   ];
 
   return (
@@ -52,36 +46,36 @@ export default function ProfilePage() {
           <div className="absolute top-0 right-0 w-72 h-72 bg-primary/10 rounded-full blur-[100px] -mr-36 -mt-36" />
           <CardContent className="p-8 flex flex-col md:flex-row items-center gap-8 relative z-10">
             <Avatar className="h-28 w-28 border-4 border-primary">
-            <AvatarFallback className="text-4xl font-bold bg-primary/20 text-primary">
-              {(profile?.display_name || 'U').charAt(0).toUpperCase()}
-            </AvatarFallback>
+              <AvatarFallback className="text-4xl font-bold bg-primary/20 text-primary">
+                {(profile?.displayName || 'U').charAt(0).toUpperCase()}
+              </AvatarFallback>
             </Avatar>
             <div className="flex-1 text-center md:text-left">
-            <div className="flex items-center gap-3 justify-center md:justify-start mb-1">
-              {editing ? (
-                <div className="flex items-center gap-2">
-                  <Input
-                    value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
-                    className="h-10 w-56 bg-muted/50 border-primary/30"
-                    placeholder="Enter display name"
-                  />
-                  <Button size="icon" variant="ghost" onClick={handleSave} className="text-green-400 hover:bg-green-400/10">
-                    <Check className="h-4 w-4" />
-                  </Button>
-                  <Button size="icon" variant="ghost" onClick={() => setEditing(false)} className="text-red-400 hover:bg-red-400/10">
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-              ) : (
-                <>
-                  <h1 className="text-3xl font-display font-bold">{profile?.display_name || 'User'}</h1>
-                  <Button size="icon" variant="ghost" onClick={() => { setDisplayName(profile?.display_name || ''); setEditing(true); }} className="text-muted-foreground hover:text-primary">
-                    <Edit2 className="h-4 w-4" />
-                  </Button>
-                </>
-              )}
-            </div>
+              <div className="flex items-center gap-3 justify-center md:justify-start mb-1">
+                {editing ? (
+                  <div className="flex items-center gap-2">
+                    <Input
+                      value={displayName}
+                      onChange={(e) => setDisplayName(e.target.value)}
+                      className="h-10 w-56 bg-muted/50 border-primary/30"
+                      placeholder="Enter display name"
+                    />
+                    <Button size="icon" variant="ghost" onClick={handleSave} className="text-green-400 hover:bg-green-400/10">
+                      <Check className="h-4 w-4" />
+                    </Button>
+                    <Button size="icon" variant="ghost" onClick={() => setEditing(false)} className="text-red-400 hover:bg-red-400/10">
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ) : (
+                  <>
+                    <h1 className="text-3xl font-display font-bold">{profile?.displayName || 'User'}</h1>
+                    <Button size="icon" variant="ghost" onClick={() => { setDisplayName(profile?.displayName || ''); setEditing(true); }} className="text-muted-foreground hover:text-primary">
+                      <Edit2 className="h-4 w-4" />
+                    </Button>
+                  </>
+                )}
+              </div>
               <p className="text-sm text-muted-foreground mb-3">{user?.email}</p>
               <div className="flex items-center gap-3 justify-center md:justify-start">
                 <Badge className="gold-gradient border-none">Level {level} Miner</Badge>
@@ -138,11 +132,11 @@ export default function ProfilePage() {
               </div>
               <div className="p-4 rounded-xl bg-muted/30 border border-border/50">
                 <p className="text-xs text-muted-foreground uppercase font-semibold mb-1">Referral Code</p>
-                <p className="text-sm font-mono">{profile?.referral_code || 'N/A'}</p>
+                <p className="text-sm font-mono">{profile?.referralCode || 'N/A'}</p>
               </div>
               <div className="p-4 rounded-xl bg-muted/30 border border-border/50">
                 <p className="text-xs text-muted-foreground uppercase font-semibold mb-1">Last Login</p>
-                <p className="text-sm">{profile?.last_login || 'Never'}</p>
+                <p className="text-sm">{profile?.lastLogin || 'Never'}</p>
               </div>
               <div className="p-4 rounded-xl bg-muted/30 border border-border/50">
                 <p className="text-xs text-muted-foreground uppercase font-semibold mb-1">Account Role</p>

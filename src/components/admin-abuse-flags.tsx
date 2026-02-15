@@ -136,8 +136,8 @@ export default function AdminAbuseFlags() {
 
                   return (
                     <TableRow key={f.id} className={isResolved ? 'opacity-50' : ''}>
-                      <TableCell className="font-mono text-xs">{(f.user_id || '').slice(-8)}</TableCell>
-                      <TableCell className="text-xs">{flagTypeLabels[f.flag_type] || f.flag_type}</TableCell>
+                      <TableCell className="font-mono text-xs">{(f.userId || '').slice(-8)}</TableCell>
+                      <TableCell className="text-xs">{flagTypeLabels[f.flagType] || f.flagType}</TableCell>
                       <TableCell>
                         <Badge variant="outline" className={`text-[10px] ${severityColor[f.severity] || ''}`}>
                           {(f.severity || 'low').toUpperCase()}
@@ -145,7 +145,7 @@ export default function AdminAbuseFlags() {
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">{details}</TableCell>
                       <TableCell className="text-xs">
-                        {f.created_at ? new Date(f.created_at).toLocaleDateString() : 'N/A'}
+                        {f.createdAt ? new Date(f.createdAt).toLocaleDateString() : 'N/A'}
                       </TableCell>
                       <TableCell>
                         {isResolved ? (

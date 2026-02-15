@@ -33,7 +33,7 @@ export default function CoinFlipPage() {
     
     try {
       const gameResult = await rewardEngine.gameResult('coinflip', betAmount, choice);
-      const isWin = gameResult.isWin;
+      const isWin = gameResult.multiplier > 0;
       const flipResult: CoinSide = isWin ? choice : (choice === 'heads' ? 'tails' : 'heads');
 
       setResult(flipResult);
