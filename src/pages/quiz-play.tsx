@@ -352,7 +352,7 @@ export default function QuizPlayPage() {
         <Card className="glass-card">
           <CardHeader>
             <div className="flex items-center justify-between mb-2">
-              <Badge className="gold-gradient border-none">+{currentQuiz.rewardAmount} BIX</Badge>
+              <Badge className="gold-gradient border-none">+{currentQuiz.reward_amount} BIX</Badge>
               <Badge variant="outline" className="capitalize text-xs">{currentQuiz.difficulty || difficulty}</Badge>
             </div>
             <CardTitle className="text-xl leading-relaxed">{currentQuiz.question}</CardTitle>

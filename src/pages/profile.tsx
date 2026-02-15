@@ -52,36 +52,36 @@ export default function ProfilePage() {
           <div className="absolute top-0 right-0 w-72 h-72 bg-primary/10 rounded-full blur-[100px] -mr-36 -mt-36" />
           <CardContent className="p-8 flex flex-col md:flex-row items-center gap-8 relative z-10">
             <Avatar className="h-28 w-28 border-4 border-primary">
-              <AvatarFallback className="text-4xl font-bold bg-primary/20 text-primary">
-                {(profile?.displayName || 'U').charAt(0).toUpperCase()}
-              </AvatarFallback>
+            <AvatarFallback className="text-4xl font-bold bg-primary/20 text-primary">
+              {(profile?.display_name || 'U').charAt(0).toUpperCase()}
+            </AvatarFallback>
             </Avatar>
             <div className="flex-1 text-center md:text-left">
-              <div className="flex items-center gap-3 justify-center md:justify-start mb-1">
-                {editing ? (
-                  <div className="flex items-center gap-2">
-                    <Input
-                      value={displayName}
-                      onChange={(e) => setDisplayName(e.target.value)}
-                      className="h-10 w-56 bg-muted/50 border-primary/30"
-                      placeholder="Enter display name"
-                    />
-                    <Button size="icon" variant="ghost" onClick={handleSave} className="text-green-400 hover:bg-green-400/10">
-                      <Check className="h-4 w-4" />
-                    </Button>
-                    <Button size="icon" variant="ghost" onClick={() => setEditing(false)} className="text-red-400 hover:bg-red-400/10">
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </div>
-                ) : (
-                  <>
-                    <h1 className="text-3xl font-display font-bold">{profile?.displayName || 'User'}</h1>
-                    <Button size="icon" variant="ghost" onClick={() => { setDisplayName(profile?.displayName || ''); setEditing(true); }} className="text-muted-foreground hover:text-primary">
-                      <Edit2 className="h-4 w-4" />
-                    </Button>
-                  </>
-                )}
-              </div>
+            <div className="flex items-center gap-3 justify-center md:justify-start mb-1">
+              {editing ? (
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    className="h-10 w-56 bg-muted/50 border-primary/30"
+                    placeholder="Enter display name"
+                  />
+                  <Button size="icon" variant="ghost" onClick={handleSave} className="text-green-400 hover:bg-green-400/10">
+                    <Check className="h-4 w-4" />
+                  </Button>
+                  <Button size="icon" variant="ghost" onClick={() => setEditing(false)} className="text-red-400 hover:bg-red-400/10">
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  <h1 className="text-3xl font-display font-bold">{profile?.display_name || 'User'}</h1>
+                  <Button size="icon" variant="ghost" onClick={() => { setDisplayName(profile?.display_name || ''); setEditing(true); }} className="text-muted-foreground hover:text-primary">
+                    <Edit2 className="h-4 w-4" />
+                  </Button>
+                </>
+              )}
+            </div>
               <p className="text-sm text-muted-foreground mb-3">{user?.email}</p>
               <div className="flex items-center gap-3 justify-center md:justify-start">
                 <Badge className="gold-gradient border-none">Level {level} Miner</Badge>

@@ -151,7 +151,7 @@ export default function DashboardPage() {
                   onClick={handleDailyCheckin}
                   disabled={checkinLoading}
                 >
-                  {checkinLoading ? 'Claiming...' : `Claim ${profile?.dailyStreak ? Math.round(10 * Math.min(1 + ((profile.dailyStreak || 0)) * 0.5, 5)) : 10} BIX`}
+                  {checkinLoading ? 'Claiming...' : `Claim ${profile?.daily_streak ? Math.round(10 * Math.min(1 + ((profile.daily_streak || 0)) * 0.5, 5)) : 10} BIX`}
                 </Button>
               </div>
               <Coins className="absolute -bottom-4 -right-4 h-32 w-32 text-white/10 rotate-12 group-hover:rotate-45 transition-transform duration-700" />

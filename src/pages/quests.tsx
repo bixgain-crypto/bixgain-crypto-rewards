@@ -158,7 +158,7 @@ export default function QuestsPage() {
     const isCompleted = completedTaskIds.has(task.id);
     const isVerifying = verifyingTaskIds.has(task.id);
     const isClaiming = claimingTask === task.id;
-    const isLocked = task.requiredLevel && userLevel < task.requiredLevel;
+    const isLocked = task.required_level && userLevel < task.required_level;
     const IconComponent = CATEGORY_ICONS[task.category] || Zap;
 
     return (
@@ -354,7 +354,7 @@ export default function QuestsPage() {
                   pendingRewards.map((pr) => (
                     <div key={pr.id} className="p-3 rounded-lg bg-background/40 border border-white/5 flex items-center justify-between">
                       <div>
-                        <p className="text-sm font-bold text-primary">+{pr.rewardAmount} BIX</p>
+                        <p className="text-sm font-bold text-primary">+{pr.reward_amount} BIX</p>
                         <p className="text-[10px] text-muted-foreground">
                           {pr.status === 'pending' ? 'Unlocks in 30 mins' : 'Processed'}
                         </p>

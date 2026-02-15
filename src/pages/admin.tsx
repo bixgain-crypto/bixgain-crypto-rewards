@@ -261,8 +261,8 @@ export default function AdminPanel() {
                         <div className="grid gap-2">
                           <Label>Type</Label>
                           <Select
-                            value={newTask.taskType}
-                            onValueChange={(val) => setNewTask({ ...newTask, taskType: val })}
+                            value={newTask.task_type}
+                            onValueChange={(val) => setNewTask({ ...newTask, task_type: val })}
                           >
                             <SelectTrigger>
                               <SelectValue placeholder="Select type" />
@@ -281,8 +281,8 @@ export default function AdminPanel() {
                           <Input
                             id="reward"
                             type="number"
-                            value={newTask.rewardAmount}
-                            onChange={(e) => setNewTask({ ...newTask, rewardAmount: parseInt(e.target.value) || 0 })}
+                            value={newTask.reward_amount}
+                            onChange={(e) => setNewTask({ ...newTask, reward_amount: parseInt(e.target.value) || 0 })}
                           />
                         </div>
                         <div className="grid gap-2">
@@ -290,8 +290,8 @@ export default function AdminPanel() {
                           <Input
                             id="xp"
                             type="number"
-                            value={newTask.xpReward}
-                            onChange={(e) => setNewTask({ ...newTask, xpReward: parseInt(e.target.value) || 0 })}
+                            value={newTask.xp_reward}
+                            onChange={(e) => setNewTask({ ...newTask, xp_reward: parseInt(e.target.value) || 0 })}
                           />
                         </div>
                         <div className="grid gap-2">
@@ -299,8 +299,8 @@ export default function AdminPanel() {
                           <Input
                             id="level"
                             type="number"
-                            value={newTask.requiredLevel}
-                            onChange={(e) => setNewTask({ ...newTask, requiredLevel: parseInt(e.target.value) || 0 })}
+                            value={newTask.required_level}
+                            onChange={(e) => setNewTask({ ...newTask, required_level: parseInt(e.target.value) || 0 })}
                           />
                         </div>
                       </div>

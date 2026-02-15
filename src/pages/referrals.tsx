@@ -23,7 +23,7 @@ export default function ReferralsPage() {
         // referral_history user_id='system' so RLS blocks client-side reads
         const allHistory = await fetchSharedData('referral_history');
         // Filter to current user's referrals
-        const myReferrals = allHistory.filter((r: any) => r.referrerId === user.id);
+        const myReferrals = allHistory.filter((r: any) => r.referrer_id === user.id);
         setReferralHistory(myReferrals);
         setReferralCount(myReferrals.length);
       } catch {
@@ -33,7 +33,7 @@ export default function ReferralsPage() {
     fetchReferrals();
   }, [user]);
 
-  const referralCode = profile?.referralCode || 'BIX-XXXXXX';
+  const referralCode = profile?.referral_code || 'BIX-XXXXXX';
   const referralLink = `${window.location.origin}?ref=${referralCode}`;
 
   const copyToClipboard = () => {
