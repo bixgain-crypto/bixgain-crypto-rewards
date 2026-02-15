@@ -21,10 +21,10 @@ export default function LeaderboardPage() {
         const ranked = profiles
           .sort((a: any, b: any) => (b.balance || 0) - (a.balance || 0))
           .map((p: any, i: number) => ({
-            userId: p.user_id || p.id,
-            displayName: p.display_name || 'Anon Miner',
+            userId: p.userId || p.id,
+            displayName: p.displayName || 'Anon Miner',
             balance: p.balance || 0,
-            level: Math.floor((p.total_earned || 0) / 500) + 1,
+            level: p.level || Math.floor((p.xp || 0) / 1000000) + 1,
             rank: i + 1,
           }));
         setLeaderboard(ranked);
@@ -93,7 +93,7 @@ export default function LeaderboardPage() {
               </TableHeader>
               <TableBody>
                 {leaderboard.map((leader) => (
-                  <TableRow key={leader.userId} className={leader.userId === profile?.user_id ? 'bg-primary/10' : ''}>
+                  <TableRow key={leader.userId} className={leader.userId === profile?.userId ? 'bg-primary/10' : ''}>
                     <TableCell>
                       <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold ${leader.rank <= 3 ? 'bg-primary/20 text-primary' : 'text-muted-foreground'}`}>
                         #{leader.rank}
@@ -105,7 +105,7 @@ export default function LeaderboardPage() {
                           <AvatarFallback className="text-[10px]">{leader.displayName.charAt(0)}</AvatarFallback>
                         </Avatar>
                         <span className="font-medium">{leader.displayName}</span>
-                        {leader.userId === profile?.user_id && <Badge className="text-[10px] h-4 gold-gradient border-none">YOU</Badge>}
+                        {leader.userId === profile?.userId && <Badge className="text-[10px] h-4 gold-gradient border-none">YOU</Badge>}
                       </div>
                     </TableCell>
                     <TableCell>
@@ -121,7 +121,7 @@ export default function LeaderboardPage() {
                 ))}
                 
                 {/* User Current Standing - show only if not already in leaderboard */}
-                {!leaderboard.find(l => l.userId === profile?.user_id) && profile && (
+                {!leaderboard.find(l => l.userId === profile?.userId) && profile && (
                   <TableRow className="bg-primary/5 border-t-2 border-primary/20">
                     <TableCell>
                       <div className="w-8 h-8 rounded-full flex items-center justify-center font-bold bg-primary text-background gold-glow">
@@ -131,14 +131,14 @@ export default function LeaderboardPage() {
                     <TableCell>
                       <div className="flex items-center gap-3">
                         <Avatar className="h-8 w-8">
-                          <AvatarFallback className="text-[10px]">{profile?.display_name?.charAt(0) || 'U'}</AvatarFallback>
+                          <AvatarFallback className="text-[10px]">{profile?.displayName?.charAt(0) || 'U'}</AvatarFallback>
                         </Avatar>
-                        <span className="font-medium">{profile?.display_name || 'You'}</span>
+                        <span className="font-medium">{profile?.displayName || 'You'}</span>
                         <Badge className="text-[10px] h-4 gold-gradient border-none">YOU</Badge>
                       </div>
                     </TableCell>
                     <TableCell>
-                      <span className="text-muted-foreground">Lvl {Math.floor((profile?.total_earned || 0) / 500) + 1}</span>
+                      <span className="text-muted-foreground">Lvl {profile.level || Math.floor((profile.xp || 0) / 1000000) + 1}</span>
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1 font-bold text-primary">

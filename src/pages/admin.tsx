@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { blink } from '../lib/blink';
 import { useAuth } from '../hooks/use-auth';
 import { fetchSharedData } from '../lib/shared-data';
 import { rewardEngine } from '../lib/reward-engine';
@@ -50,12 +50,12 @@ export default function AdminPanel() {
 
   const fetchData = async () => {
     try {
-      const [userListRes, taskListRes] = await Promise.all([
-        supabase.from('user_profiles').select('*').order('balance', { ascending: false }).limit(50),
-        supabase.from('tasks').select('*').order('created_at', { ascending: false }),
+      const [userList, taskList] = await Promise.all([
+        blink.db.userProfiles.list({ limit: 50, orderBy: { balance: 'desc' } }),
+        blink.db.tasks.list({ orderBy: { createdAt: 'desc' } }),
       ]);
-      if (userListRes.data) setUsers(userListRes.data);
-      if (taskListRes.data) setTasks(taskListRes.data);
+      setUsers(userList);
+      setTasks(taskList);
     } catch (err) {
       console.error('Error fetching admin data:', err);
     } finally {
@@ -75,19 +75,10 @@ export default function AdminPanel() {
 
     setCreatingTask(true);
     try {
-      const { error } = await supabase.from('tasks').insert({
-        id: `task_${Date.now()}`,
-        title: newTask.title,
-        description: newTask.description,
-        category: newTask.category,
-        task_type: newTask.taskType,
-        reward_amount: newTask.rewardAmount,
-        xp_reward: newTask.xpReward,
-        required_level: newTask.requiredLevel,
-        link: newTask.link,
-        is_active: 1,
+      await blink.db.tasks.create({
+        ...newTask,
+        isActive: 1,
       });
-      if (error) throw error;
       toast.success('Task created successfully');
       setIsCreateDialogOpen(false);
       setNewTask({
@@ -110,8 +101,7 @@ export default function AdminPanel() {
 
   const handleToggleTaskStatus = async (taskId: string, currentStatus: number) => {
     try {
-      const { error } = await supabase.from('tasks').update({ is_active: currentStatus > 0 ? 0 : 1 }).eq('id', taskId);
-      if (error) throw error;
+      await blink.db.tasks.update(taskId, { isActive: currentStatus > 0 ? 0 : 1 });
       toast.success('Task status updated');
       fetchData();
     } catch (err: any) {
@@ -122,8 +112,7 @@ export default function AdminPanel() {
   const handleDeleteTask = async (taskId: string) => {
     if (!confirm('Are you sure you want to delete this task?')) return;
     try {
-      const { error } = await supabase.from('tasks').delete().eq('id', taskId);
-      if (error) throw error;
+      await blink.db.tasks.delete(taskId);
       toast.success('Task deleted');
       fetchData();
     } catch (err: any) {
@@ -193,12 +182,12 @@ export default function AdminPanel() {
                   </TableHeader>
                   <TableBody>
                     {users.map((u) => (
-                      <TableRow key={u.user_id || u.id}>
-                        <TableCell className="font-mono text-xs">{(u.user_id || u.id || '').slice(-8)}</TableCell>
-                        <TableCell>{u.display_name || 'Miner'}</TableCell>
+                      <TableRow key={u.userId || u.id}>
+                        <TableCell className="font-mono text-xs">{(u.userId || u.id || '').slice(-8)}</TableCell>
+                        <TableCell>{u.displayName || 'Miner'}</TableCell>
                         <TableCell className="font-bold text-primary">{Math.round(u.balance || 0)} BIX</TableCell>
-                        <TableCell>{Math.round(u.total_earned || 0)} BIX</TableCell>
-                        <TableCell>{u.daily_streak || 0} days</TableCell>
+                        <TableCell>{Math.round(u.totalEarned || 0)} BIX</TableCell>
+                        <TableCell>{u.dailyStreak || 0} days</TableCell>
                         <TableCell>
                           <Badge variant={u.role === 'admin' ? 'default' : 'secondary'} className="text-[10px] uppercase">
                             {u.role || 'user'}
@@ -352,10 +341,10 @@ export default function AdminPanel() {
                       <TableRow key={t.id}>
                         <TableCell className="text-xs text-muted-foreground">{t.id.slice(-6)}</TableCell>
                         <TableCell className="font-medium">{t.title}</TableCell>
-                        <TableCell className="font-bold text-primary">{t.reward_amount} BIX</TableCell>
+                        <TableCell className="font-bold text-primary">{t.rewardAmount} BIX</TableCell>
                         <TableCell className="capitalize text-xs">{t.category}</TableCell>
                         <TableCell>
-                          {Number(t.is_active) > 0 ? (
+                          {Number(t.isActive) > 0 ? (
                             <Badge className="bg-green-500/20 text-green-400 border-green-500/30">Active</Badge>
                           ) : (
                             <Badge className="bg-red-500/20 text-red-400 border-red-500/30">Inactive</Badge>
@@ -367,10 +356,10 @@ export default function AdminPanel() {
                               variant="ghost" 
                               size="icon" 
                               className="h-8 w-8"
-                              onClick={() => handleToggleTaskStatus(t.id, Number(t.is_active))}
-                              title={Number(t.is_active) > 0 ? "Deactivate" : "Activate"}
+                              onClick={() => handleToggleTaskStatus(t.id, Number(t.isActive))}
+                              title={Number(t.isActive) > 0 ? "Deactivate" : "Activate"}
                             >
-                              {Number(t.is_active) > 0 ? <XCircle className="h-4 w-4 text-orange-400" /> : <CheckCircle className="h-4 w-4 text-green-400" />}
+                              {Number(t.isActive) > 0 ? <XCircle className="h-4 w-4 text-orange-400" /> : <CheckCircle className="h-4 w-4 text-green-400" />}
                             </Button>
                             <Button 
                               variant="ghost" 

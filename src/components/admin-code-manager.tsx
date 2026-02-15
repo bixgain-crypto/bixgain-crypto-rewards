@@ -93,7 +93,7 @@ export default function AdminCodeManager({ tasks }: Props) {
               >
                 <option value="general">General (no specific task)</option>
                 {tasks.map((t) => (
-                  <option key={t.id} value={t.id}>{t.title} ({t.reward_amount} BIX)</option>
+                  <option key={t.id} value={t.id}>{t.title} ({t.rewardAmount} BIX)</option>
                 ))}
               </select>
             </div>
@@ -172,7 +172,7 @@ export default function AdminCodeManager({ tasks }: Props) {
               </TableHeader>
               <TableBody>
                 {windows.map((w) => {
-                  const isActive = Number(w.is_active) > 0 && !w.expired;
+                  const isActive = Number(w.isActive) > 0 && !w.expired;
                   return (
                     <TableRow key={w.id}>
                       <TableCell>
@@ -183,10 +183,10 @@ export default function AdminCodeManager({ tasks }: Props) {
                           </Button>
                         </div>
                       </TableCell>
-                      <TableCell className="text-xs">{w.task_id === 'general' ? 'General' : w.task_id}</TableCell>
+                      <TableCell className="text-xs">{w.taskId === 'general' ? 'General' : w.taskId}</TableCell>
                       <TableCell>
-                        <span className="font-bold">{w.current_redemptions || 0}</span>
-                        <span className="text-muted-foreground">/{w.max_redemptions || 'unlimited'}</span>
+                        <span className="font-bold">{w.currentRedemptions || 0}</span>
+                        <span className="text-muted-foreground">/{w.maxRedemptions || 'unlimited'}</span>
                         {w.utilizationPercent !== null && (
                           <span className="text-xs text-muted-foreground ml-1">({w.utilizationPercent}%)</span>
                         )}

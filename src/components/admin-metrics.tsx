@@ -29,7 +29,7 @@ export default function AdminMetrics() {
   }, []);
 
   const todayMetric = metrics[0] || {};
-  const totalAllTime = metrics.reduce((sum: number, m: any) => sum + (m.total_rewards_issued || 0), 0);
+  const totalAllTime = metrics.reduce((sum: number, m: any) => sum + (m.totalRewardsIssued || 0), 0);
 
   if (loading) {
     return (
@@ -66,7 +66,7 @@ export default function AdminMetrics() {
               <div>
                 <p className="text-xs text-muted-foreground">Today BIX Issued</p>
                 <p className="text-2xl font-bold font-display text-green-400">
-                  {Math.round(todayMetric.total_daily_rewards || 0)}
+                  {Math.round(todayMetric.totalDailyRewards || 0)}
                 </p>
               </div>
             </div>
@@ -113,11 +113,11 @@ export default function AdminMetrics() {
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
             {[
-              { label: 'Task Rewards', value: todayMetric.task_rewards_issued || 0, color: 'text-primary' },
-              { label: 'Referral Rewards', value: todayMetric.referral_rewards_issued || 0, color: 'text-green-400' },
-              { label: 'Quiz Rewards', value: todayMetric.quiz_rewards_issued || 0, color: 'text-blue-400' },
-              { label: 'Game Rewards', value: todayMetric.game_rewards_issued || 0, color: 'text-purple-400' },
-              { label: 'Code Rewards', value: todayMetric.code_rewards_issued || 0, color: 'text-orange-400' },
+              { label: 'Task Rewards', value: todayMetric.taskRewardsIssued || 0, color: 'text-primary' },
+              { label: 'Referral Rewards', value: todayMetric.referralRewardsIssued || 0, color: 'text-green-400' },
+              { label: 'Quiz Rewards', value: todayMetric.quizRewardsIssued || 0, color: 'text-blue-400' },
+              { label: 'Game Rewards', value: todayMetric.gameRewardsIssued || 0, color: 'text-purple-400' },
+              { label: 'Code Rewards', value: todayMetric.codeRewardsIssued || 0, color: 'text-orange-400' },
             ].map((item) => (
               <div key={item.label} className="p-3 rounded-xl bg-muted/20 border border-white/5 text-center">
                 <p className="text-xs text-muted-foreground mb-1">{item.label}</p>
@@ -155,14 +155,14 @@ export default function AdminMetrics() {
               </TableHeader>
               <TableBody>
                 {metrics.map((m) => (
-                  <TableRow key={m.id || m.metric_date}>
-                    <TableCell className="font-medium">{m.metric_date}</TableCell>
-                    <TableCell className="font-bold text-primary">{Math.round(m.total_daily_rewards || 0)}</TableCell>
-                    <TableCell>{m.active_users_today || 0}</TableCell>
-                    <TableCell>{Math.round(m.task_rewards_issued || 0)}</TableCell>
-                    <TableCell>{Math.round(m.referral_rewards_issued || 0)}</TableCell>
-                    <TableCell>{Math.round(m.quiz_rewards_issued || 0)}</TableCell>
-                    <TableCell>{Math.round(m.code_rewards_issued || 0)}</TableCell>
+                  <TableRow key={m.id || m.metricDate}>
+                    <TableCell className="font-medium">{m.metricDate}</TableCell>
+                    <TableCell className="font-bold text-primary">{Math.round(m.totalDailyRewards || 0)}</TableCell>
+                    <TableCell>{m.activeUsersToday || 0}</TableCell>
+                    <TableCell>{Math.round(m.taskRewardsIssued || 0)}</TableCell>
+                    <TableCell>{Math.round(m.referralRewardsIssued || 0)}</TableCell>
+                    <TableCell>{Math.round(m.quizRewardsIssued || 0)}</TableCell>
+                    <TableCell>{Math.round(m.codeRewardsIssued || 0)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

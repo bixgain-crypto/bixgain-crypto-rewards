@@ -1,5 +1,4 @@
-import { createClient as createBlinkClient } from "npm:@blinkdotnew/sdk";
-import { createClient as createSupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "npm:@blinkdotnew/sdk";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -74,15 +73,42 @@ function generateSecureCode(length = 8): string {
   return Array.from(array, (b) => chars[b % chars.length]).join("");
 }
 
-// ===================== ABUSE DETECTION =====================
-async function checkAbuseThrottling(supabase: any, userId: string, ipHash: string): Promise<{ allowed: boolean; multiplier: number; reason?: string }> {
-  // Check if user is flagged
-  const { data: flags, error: flagsError } = await supabase.from("abuse_flags").select("*").eq("user_id", userId).eq("resolved", 0).limit(10);
+// ===================== XP AND LEVELING SYSTEM =====================
+const XP_PER_LEVEL = 1000000;
 
-  if (flagsError) {
-    console.error("Error fetching abuse flags:", flagsError);
-    return { allowed: true, multiplier: 1.0 }; // Fallback
-  }
+function calculateLevel(xp: number): number {
+  return Math.floor(xp / XP_PER_LEVEL) + 1;
+}
+
+// Helper to update user profile with XP and balance, handling level ups
+async function updateUserBalanceAndXP(blink: any, userId: string, data: { balanceChange: number; earnedChange: number; xpChange: number }) {
+  const profiles = await blink.db.table("user_profiles").list({ where: { userId }, limit: 1 });
+  if (profiles.length === 0) return null;
+  const profile = profiles[0];
+
+  const newXP = (profile.xp || 0) + data.xpChange;
+  const newLevel = calculateLevel(newXP);
+  const leveledUp = newLevel > (profile.level || 1);
+
+  const updateData: any = {
+    balance: (profile.balance || 0) + data.balanceChange,
+    totalEarned: (profile.totalEarned || 0) + data.earnedChange,
+    xp: newXP,
+    level: newLevel,
+  };
+
+  await blink.db.table("user_profiles").update(userId, updateData);
+  
+  return { ...profile, ...updateData, leveledUp };
+}
+
+// ===================== ABUSE DETECTION =====================
+async function checkAbuseThrottling(blink: any, userId: string, ipHash: string): Promise<{ allowed: boolean; multiplier: number; reason?: string }> {
+  // Check if user is flagged
+  const flags = await blink.db.table("abuse_flags").list({
+    where: { userId, resolved: 0 },
+    limit: 10,
+  });
 
   const highSeverityFlags = flags.filter((f: any) => f.severity === "high" || f.severity === "critical");
   if (highSeverityFlags.length > 0) {
@@ -94,35 +120,39 @@ async function checkAbuseThrottling(supabase: any, userId: string, ipHash: strin
 
   // Check redemption velocity - last 10 minutes
   const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-  const { data: recentRedemptions, error: redemptionError } = await supabase.from("redemptions").select("*").eq("user_id", userId).order("redeemed_at", { ascending: false }).limit(20);
+  const recentRedemptions = await blink.db.table("redemptions").list({
+    where: { userId },
+    orderBy: { redeemedAt: "desc" },
+    limit: 20,
+  });
+  const recentCount = recentRedemptions.filter((r: any) => r.redeemedAt > tenMinAgo).length;
 
-  if (!redemptionError && recentRedemptions) {
-    const recentCount = recentRedemptions.filter((r: any) => r.redeemed_at > tenMinAgo).length;
-    if (recentCount >= 5) {
-      multiplier *= 0.5; // Half rewards if redeeming too fast
-    }
+  if (recentCount >= 5) {
+    multiplier *= 0.5; // Half rewards if redeeming too fast
   }
 
   // Check multi-account from same IP (last 24h)
   const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  const { data: ipRedemptions, error: ipError } = await supabase.from("redemptions").select("*").eq("ip_hash", ipHash).order("redeemed_at", { ascending: false }).limit(50);
+  const ipRedemptions = await blink.db.table("redemptions").list({
+    where: { ipHash },
+    orderBy: { redeemedAt: "desc" },
+    limit: 50,
+  });
 
-  if (!ipError && ipRedemptions) {
-    const uniqueUsersFromIP = new Set(
-      ipRedemptions.filter((r: any) => r.redeemed_at > dayAgo).map((r: any) => r.user_id)
-    );
+  const uniqueUsersFromIP = new Set(
+    ipRedemptions.filter((r: any) => r.redeemedAt > dayAgo).map((r: any) => r.userId)
+  );
 
-    if (uniqueUsersFromIP.size > 3) {
-      // Flag suspicious cluster
-      await supabase.from("abuse_flags").insert({
-        id: `af_${Date.now()}_${userId.slice(-4)}`,
-        user_id: userId,
-        flag_type: "multi_account_ip",
-        severity: "medium",
-        details: JSON.stringify({ ipHash, accountCount: uniqueUsersFromIP.size }),
-      });
-      multiplier *= 0.25;
-    }
+  if (uniqueUsersFromIP.size > 3) {
+    // Flag suspicious cluster
+    await blink.db.table("abuse_flags").create({
+      id: `af_${Date.now()}_${userId.slice(-4)}`,
+      userId,
+      flagType: "multi_account_ip",
+      severity: "medium",
+      details: JSON.stringify({ ipHash, accountCount: uniqueUsersFromIP.size }),
+    });
+    multiplier *= 0.25;
   }
 
   // Low-severity flags reduce multiplier slightly
@@ -134,39 +164,40 @@ async function checkAbuseThrottling(supabase: any, userId: string, ipHash: strin
 }
 
 // ===================== METRICS TRACKING =====================
-async function trackMetric(supabase: any, rewardType: string, amount: number) {
+async function trackMetric(blink: any, rewardType: string, amount: number) {
   const today = new Date().toISOString().split("T")[0];
   const metricId = `pm_${today}`;
 
   try {
-    const { data: existing, error: fetchError } = await supabase.from("platform_metrics").select("*").eq("metric_date", today).limit(1);
-
-    if (fetchError) throw fetchError;
+    const existing = await blink.db.table("platform_metrics").list({
+      where: { metricDate: today },
+      limit: 1,
+    });
 
     const fieldMap: Record<string, string> = {
-      task: "task_rewards_issued",
-      referral: "referral_rewards_issued",
-      quiz: "quiz_rewards_issued",
-      game: "game_rewards_issued",
-      code: "code_rewards_issued",
-      daily: "task_rewards_issued",
+      task: "taskRewardsIssued",
+      referral: "referralRewardsIssued",
+      quiz: "quizRewardsIssued",
+      game: "gameRewardsIssued",
+      code: "codeRewardsIssued",
+      daily: "taskRewardsIssued",
     };
 
-    const field = fieldMap[rewardType] || "task_rewards_issued";
+    const field = fieldMap[rewardType] || "taskRewardsIssued";
 
-    if (existing && existing.length > 0) {
+    if (existing.length > 0) {
       const m = existing[0];
-      await supabase.from("platform_metrics").update({
-        total_rewards_issued: (m.total_rewards_issued || 0) + amount,
-        total_daily_rewards: (m.total_daily_rewards || 0) + amount,
+      await blink.db.table("platform_metrics").update(m.id, {
+        totalRewardsIssued: (m.totalRewardsIssued || 0) + amount,
+        totalDailyRewards: (m.totalDailyRewards || 0) + amount,
         [field]: (m[field] || 0) + amount,
-      }).eq("id", m.id);
+      });
     } else {
-      await supabase.from("platform_metrics").insert({
+      await blink.db.table("platform_metrics").create({
         id: metricId,
-        metric_date: today,
-        total_rewards_issued: amount,
-        total_daily_rewards: amount,
+        metricDate: today,
+        totalRewardsIssued: amount,
+        totalDailyRewards: amount,
         [field]: amount,
       });
     }
@@ -188,15 +219,12 @@ async function handler(req: Request): Promise<Response> {
   try {
     const projectId = Deno.env.get("BLINK_PROJECT_ID");
     const secretKey = Deno.env.get("BLINK_SECRET_KEY");
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-    if (!projectId || !secretKey || !supabaseUrl || !supabaseServiceKey) {
+    if (!projectId || !secretKey) {
       return errorResponse("Missing server config", 500);
     }
 
-    const blink = createBlinkClient({ projectId, secretKey });
-    const supabase = createSupabaseClient(supabaseUrl, supabaseServiceKey);
+    const blink = createClient({ projectId, secretKey });
 
     // Verify JWT
     const auth = await blink.auth.verifyToken(req.headers.get("Authorization"));
@@ -230,45 +258,45 @@ async function handler(req: Request): Promise<Response> {
     }
 
     // Auto-process pending rewards
-    await autoProcessPending(supabase, userId);
+    await autoProcessPending(blink, userId);
 
     switch (action) {
       case "process_referral":
-        return await processReferral(supabase, userId, body, ipHash);
+        return await processReferral(blink, userId, body, ipHash);
       case "complete_task":
-        return await completeTask(supabase, userId, body);
+        return await completeTask(blink, userId, body);
       case "daily_checkin":
-        return await dailyCheckin(supabase, userId);
+        return await dailyCheckin(blink, userId);
       case "start_quiz":
-        return await startQuiz(supabase, userId, body);
+        return await startQuiz(blink, userId, body);
       case "quiz_answer":
-        return await quizAnswer(supabase, userId, body);
+        return await quizAnswer(blink, userId, body);
       case "finish_quiz":
-        return await finishQuiz(supabase, userId, body);
+        return await finishQuiz(blink, userId, body);
       case "game_result":
-        return await gameResult(supabase, userId, body);
+        return await gameResult(blink, userId, body);
       // New secure task code system
       case "redeem_task_code":
-        return await redeemTaskCode(supabase, userId, body, ipHash, deviceHash, userAgent);
+        return await redeemTaskCode(blink, userId, body, ipHash, deviceHash, userAgent);
       case "admin_generate_code_window":
-        return await adminGenerateCodeWindow(supabase, userId, body);
+        return await adminGenerateCodeWindow(blink, userId, body);
       case "admin_list_code_windows":
-        return await adminListCodeWindows(supabase, userId, body);
+        return await adminListCodeWindows(blink, userId, body);
       case "admin_disable_code_window":
-        return await adminDisableCodeWindow(supabase, userId, body);
+        return await adminDisableCodeWindow(blink, userId, body);
       case "admin_get_metrics":
-        return await adminGetMetrics(supabase, userId);
+        return await adminGetMetrics(blink, userId);
       case "admin_get_abuse_flags":
-        return await adminGetAbuseFlags(supabase, userId);
+        return await adminGetAbuseFlags(blink, userId);
       case "admin_resolve_flag":
-        return await adminResolveFlag(supabase, userId, body);
+        return await adminResolveFlag(blink, userId, body);
       case "get_pending_rewards":
-        return await getPendingRewards(supabase, userId);
+        return await getPendingRewards(blink, userId);
       // Legacy compat
       case "verify_reward_code":
-        return await redeemTaskCode(supabase, userId, body, ipHash, deviceHash, userAgent);
+        return await redeemTaskCode(blink, userId, body, ipHash, deviceHash, userAgent);
       case "admin_generate_code":
-        return await adminGenerateCodeWindow(supabase, userId, body);
+        return await adminGenerateCodeWindow(blink, userId, body);
       default:
         return errorResponse("Invalid action");
     }
@@ -279,35 +307,35 @@ async function handler(req: Request): Promise<Response> {
 }
 
 // ===================== ADMIN CHECK =====================
-async function verifyAdmin(supabase: any, userId: string): Promise<boolean> {
-  const { data: profile, error } = await supabase.from("user_profiles").select("role").eq("user_id", userId).maybeSingle();
-  if (error) return false;
-  return profile?.role === "admin";
+async function verifyAdmin(blink: any, userId: string): Promise<boolean> {
+  const profiles = await blink.db.table("user_profiles").list({ where: { userId }, limit: 1 });
+  return profiles.length > 0 && profiles[0].role === "admin";
 }
 
 // ===================== TASK CODE WINDOW SYSTEM =====================
 
-async function adminGenerateCodeWindow(supabase: any, userId: string, body: any) {
-  if (!(await verifyAdmin(supabase, userId))) {
+async function adminGenerateCodeWindow(blink: any, userId: string, body: any) {
+  if (!(await verifyAdmin(blink, userId))) {
     return errorResponse("Admin access required", 403);
   }
 
-  const { taskId, validHours = 3, maxRedemptions } = body;
+  const {taskId, validHours = 3, maxRedemptions} = body;
 
   // Validate task exists
   if (taskId) {
-    const { data: tasks, error } = await supabase.from("tasks").select("id").eq("id", taskId).limit(1);
-    if (error || !tasks || tasks.length === 0) return errorResponse("Task not found");
+    const tasks = await blink.db.table("tasks").list({ where: { id: taskId }, limit: 1 });
+    if (tasks.length === 0) return errorResponse("Task not found");
   }
 
   // Check max 4 active windows per task per day
   const today = new Date().toISOString().split("T")[0];
-  const { data: existingWindows, error: windowsError } = await supabase.from("task_code_windows").select("*").eq("is_active", 1).limit(50);
-
-  if (windowsError) return errorResponse("Failed to check existing windows");
+  const existingWindows = await blink.db.table("task_code_windows").list({
+    where: taskId ? { taskId, isActive: 1 } : { isActive: 1 },
+    limit: 50,
+  });
 
   const todayWindows = existingWindows.filter(
-    (w: any) => w.created_at && w.created_at.startsWith(today) && (!taskId || w.task_id === taskId)
+    (w: any) => w.createdAt && w.createdAt.startsWith(today) && (!taskId || w.taskId === taskId)
   );
 
   if (taskId && todayWindows.length >= 4) {
@@ -320,22 +348,17 @@ async function adminGenerateCodeWindow(supabase: any, userId: string, body: any)
   const validUntil = new Date(now.getTime() + validHours * 60 * 60 * 1000).toISOString();
   const windowId = `cw_${Date.now()}_${code.slice(0, 4)}`;
 
-  const { error: insertError } = await supabase.from("task_code_windows").insert({
+  await blink.db.table("task_code_windows").create({
     id: windowId,
-    task_id: taskId || "general",
+    taskId: taskId || "general",
     code,
-    valid_from: validFrom,
-    valid_until: validUntil,
-    max_redemptions: maxRedemptions || null,
-    current_redemptions: 0,
-    is_active: 1,
-    created_by_admin: userId,
+    validFrom,
+    validUntil,
+    maxRedemptions: maxRedemptions || null,
+    currentRedemptions: 0,
+    isActive: 1,
+    createdByAdmin: userId,
   });
-
-  if (insertError) {
-    console.error("Error generating code window:", insertError);
-    return errorResponse("Failed to generate code window");
-  }
 
   return jsonResponse({
     success: true,
@@ -348,34 +371,33 @@ async function adminGenerateCodeWindow(supabase: any, userId: string, body: any)
   });
 }
 
-async function adminListCodeWindows(supabase: any, userId: string, body: any) {
-  if (!(await verifyAdmin(supabase, userId))) {
+async function adminListCodeWindows(blink: any, userId: string, body: any) {
+  if (!(await verifyAdmin(blink, userId))) {
     return errorResponse("Admin access required", 403);
   }
 
   const { activeOnly = true } = body;
-  let query = supabase.from("task_code_windows").select("*").order("created_at", { ascending: false }).limit(50);
-  
-  if (activeOnly) {
-    query = query.eq("is_active", 1);
-  }
+  const where: Record<string, unknown> = {};
+  if (activeOnly) where.isActive = 1;
 
-  const { data: windows, error } = await query;
-
-  if (error) return errorResponse("Failed to list windows");
+  const windows = await blink.db.table("task_code_windows").list({
+    where,
+    orderBy: { createdAt: "desc" },
+    limit: 50,
+  });
 
   // Add remaining time info
   const now = Date.now();
   const enriched = windows.map((w: any) => {
-    const validUntil = new Date(w.valid_until).getTime();
+    const validUntil = new Date(w.validUntil).getTime();
     const remainingMs = Math.max(0, validUntil - now);
     const expired = remainingMs === 0;
     return {
       ...w,
       remainingMinutes: Math.round(remainingMs / 60000),
       expired,
-      utilizationPercent: w.max_redemptions
-        ? Math.round(((w.current_redemptions || 0) / w.max_redemptions) * 100)
+      utilizationPercent: w.maxRedemptions
+        ? Math.round(((w.currentRedemptions || 0) / w.maxRedemptions) * 100)
         : null,
     };
   });
@@ -383,17 +405,15 @@ async function adminListCodeWindows(supabase: any, userId: string, body: any) {
   return jsonResponse({ success: true, windows: enriched });
 }
 
-async function adminDisableCodeWindow(supabase: any, userId: string, body: any) {
-  if (!(await verifyAdmin(supabase, userId))) {
+async function adminDisableCodeWindow(blink: any, userId: string, body: any) {
+  if (!(await verifyAdmin(blink, userId))) {
     return errorResponse("Admin access required", 403);
   }
 
   const { windowId } = body;
   if (!windowId) return errorResponse("Missing windowId");
 
-  const { error } = await supabase.from("task_code_windows").update({ is_active: 0 }).eq("id", windowId);
-
-  if (error) return errorResponse("Failed to disable window");
+  await blink.db.table("task_code_windows").update(windowId, { isActive: 0 });
 
   return jsonResponse({ success: true, message: "Code window disabled" });
 }
@@ -401,7 +421,7 @@ async function adminDisableCodeWindow(supabase: any, userId: string, body: any) 
 // ===================== SECURE CODE REDEMPTION =====================
 
 async function redeemTaskCode(
-  supabase: any,
+  blink: any,
   userId: string,
   body: any,
   ipHash: string,
@@ -417,17 +437,20 @@ async function redeemTaskCode(
   const cleanCode = code.trim().toUpperCase();
 
   // 1. Find active code window
-  const { data: windows, error } = await supabase.from("task_code_windows").select("*").eq("code", cleanCode).eq("is_active", 1).limit(1);
+  const windows = await blink.db.table("task_code_windows").list({
+    where: { code: cleanCode, isActive: 1 },
+    limit: 1,
+  });
 
-  if (error || !windows || windows.length === 0) {
+  if (windows.length === 0) {
     const failCount = trackFailedAttempt(`lockout:${userId}`);
     if (failCount >= 8) {
-      await supabase.from("abuse_flags").insert({
+      await blink.db.table("abuse_flags").create({
         id: `af_${Date.now()}_${userId.slice(-4)}`,
-        user_id: userId,
-        flag_type: "brute_force_codes",
+        userId,
+        flagType: "brute_force_codes",
         severity: "medium",
-        details: JSON.stringify({ failed_attempts: failCount, ip_hash: ipHash }),
+        details: JSON.stringify({ failedAttempts: failCount, ipHash }),
       });
     }
     return errorResponse("Invalid or expired code");
@@ -437,35 +460,41 @@ async function redeemTaskCode(
   const now = new Date();
 
   // 2. Check time validity
-  if (now < new Date(window.valid_from) || now > new Date(window.valid_until)) {
+  if (now < new Date(window.validFrom) || now > new Date(window.validUntil)) {
     trackFailedAttempt(`lockout:${userId}`);
     return errorResponse("Code has expired or not yet active");
   }
 
   // 3. Check max redemptions
-  if (window.max_redemptions && (window.current_redemptions || 0) >= window.max_redemptions) {
+  if (window.maxRedemptions && (window.currentRedemptions || 0) >= window.maxRedemptions) {
     return errorResponse("Code has reached maximum redemptions");
   }
 
   // 4. Check duplicate redemption
-  const { data: existingRedemption, error: redemptionError } = await supabase.from("redemptions").select("id").eq("user_id", userId).eq("window_id", window.id).limit(1);
+  const existingRedemption = await blink.db.table("redemptions").list({
+    where: { userId, windowId: window.id },
+    limit: 1,
+  });
 
-  if (redemptionError || (existingRedemption && existingRedemption.length > 0)) {
+  if (existingRedemption.length > 0) {
     return errorResponse("You already redeemed this code");
   }
 
   // 5. Abuse throttling check
-  const abuseCheck = await checkAbuseThrottling(supabase, userId, ipHash);
+  const abuseCheck = await checkAbuseThrottling(blink, userId, ipHash);
   if (!abuseCheck.allowed) {
     return errorResponse(abuseCheck.reason || "Account under review");
   }
 
   // 6. Get task reward amount
   let rewardAmount = 100; // Default if general code
-  if (window.task_id && window.task_id !== "general") {
-    const { data: tasks, error: taskError } = await supabase.from("tasks").select("reward_amount").eq("id", window.task_id).limit(1);
-    if (!taskError && tasks && tasks.length > 0) {
-      rewardAmount = tasks[0].reward_amount || 100;
+  if (window.taskId && window.taskId !== "general") {
+    const tasks = await blink.db.table("tasks").list({
+      where: { id: window.taskId },
+      limit: 1,
+    });
+    if (tasks.length > 0) {
+      rewardAmount = tasks[0].rewardAmount || 100;
     }
   }
 
@@ -473,73 +502,71 @@ async function redeemTaskCode(
   rewardAmount = Math.round(rewardAmount * abuseCheck.multiplier);
 
   // 7. Get user profile
-  const { data: profile, error: profileError } = await supabase.from("user_profiles").select("*").eq("user_id", userId).maybeSingle();
-  if (profileError || !profile) return errorResponse("Profile not found");
+  const profiles = await blink.db.table("user_profiles").list({
+    where: { userId },
+    limit: 1,
+  });
+  if (profiles.length === 0) return errorResponse("Profile not found");
+  const profile = profiles[0];
 
   // 8. Execute atomically
   try {
     // Record redemption
-    const { error: createRedemptionError } = await supabase.from("redemptions").insert({
+    await blink.db.table("redemptions").create({
       id: `rd_${Date.now()}_${userId.slice(-4)}`,
-      user_id: userId,
-      task_id: window.task_id || "general",
-      window_id: window.id,
-      redeemed_at: now.toISOString(),
-      ip_hash: ipHash,
-      device_hash: deviceHash,
-      user_agent: userAgent.slice(0, 200),
+      userId,
+      taskId: window.taskId || "general",
+      windowId: window.id,
+      redeemedAt: now.toISOString(),
+      ipHash,
+      deviceHash,
+      userAgent: userAgent.slice(0, 200),
     });
 
-    if (createRedemptionError) throw createRedemptionError;
-
     // Increment window redemption count
-    const { error: updateWindowError } = await supabase.from("task_code_windows").update({
-      current_redemptions: (window.current_redemptions || 0) + 1,
-    }).eq("id", window.id);
+    await blink.db.table("task_code_windows").update(window.id, {
+      currentRedemptions: (window.currentRedemptions || 0) + 1,
+    });
 
-    if (updateWindowError) throw updateWindowError;
-
-    // Update user balance
-    const { error: updateProfileError } = await supabase.from("user_profiles").update({
-      balance: (profile.balance || 0) + rewardAmount,
-      total_earned: (profile.total_earned || 0) + rewardAmount,
-      xp: (profile.xp || 0) + 10,
-    }).eq("user_id", userId);
-
-    if (updateProfileError) throw updateProfileError;
+    // Update user balance and XP
+    const updatedProfile = await updateUserBalanceAndXP(blink, userId, {
+      balanceChange: rewardAmount,
+      earnedChange: rewardAmount,
+      xpChange: 100, // Significant XP for code redemption
+    });
 
     // Log transaction
-    await supabase.from("transactions").insert({
-      id: `tx_${Date.now()}_${userId.slice(-4)}`,
-      user_id: userId,
+    await blink.db.table("transactions").create({
+      userId,
       amount: rewardAmount,
       type: "code_redemption",
       description: `Redeemed code: ${cleanCode.slice(0, 3)}***`,
     });
 
     // Audit log
-    await supabase.from("reward_logs").insert({
-      id: `log_${Date.now()}_${userId.slice(-4)}`,
-      user_id: userId,
-      reward_type: "code_redemption",
-      reward_amount: rewardAmount,
-      source_id: window.id,
-      source_type: "task_code_window",
-      ip_hash: ipHash,
+    await blink.db.table("reward_logs").create({
+      userId,
+      rewardType: "code_redemption",
+      rewardAmount,
+      sourceId: window.id,
+      sourceType: "task_code_window",
+      ipHash,
     });
 
     // Track metrics
-    await trackMetric(supabase, "code", rewardAmount);
+    await trackMetric(blink, "code", rewardAmount);
 
     // Process referral commission (10% of earned reward to referrer)
-    await processReferralCommission(supabase, userId, rewardAmount, window.id);
+    await processReferralCommission(blink, userId, rewardAmount, window.id);
 
     return jsonResponse({
       success: true,
       reward: rewardAmount,
       multiplier: abuseCheck.multiplier,
-      newBalance: (profile.balance || 0) + rewardAmount,
-      message: `+${rewardAmount} BIX earned!`,
+      newBalance: updatedProfile?.balance,
+      newLevel: updatedProfile?.level,
+      leveledUp: updatedProfile?.leveledUp,
+      message: `+${rewardAmount} BIX earned!${updatedProfile?.leveledUp ? " LEVEL UP!" : ""}`,
     });
   } catch (err) {
     console.error("Redemption error:", err);
@@ -549,36 +576,51 @@ async function redeemTaskCode(
 
 // ===================== REFERRAL COMMISSION SYSTEM =====================
 
-async function processReferralCommission(supabase: any, userId: string, earnedAmount: number, sourceId: string) {
+async function processReferralCommission(blink: any, userId: string, earnedAmount: number, sourceId: string) {
   try {
-    const { data: profile, error: profileError } = await supabase.from("user_profiles").select("*").eq("user_id", userId).maybeSingle();
-    if (profileError || !profile || !profile.referred_by) return; // No referrer
+    const profiles = await blink.db.table("user_profiles").list({ where: { userId }, limit: 1 });
+    if (profiles.length === 0 || !profiles[0].referredBy) return; // No profile or no referrer
 
-    const referrerId = profile.referred_by;
+    const profile = profiles[0];
+    const referrerId = profile.referredBy;
 
     // Check referral qualification: referred user must have completed 2+ tasks
-    const { data: completedTasks, error: tasksError } = await supabase.from("user_tasks").select("id").eq("user_id", userId).eq("status", "completed").limit(5);
+    const completedTasks = await blink.db.table("user_tasks").list({
+      where: { userId, status: "completed" },
+      limit: 5,
+    });
 
     // Also count redemptions
-    const { data: redemptions, error: redemptionsError } = await supabase.from("redemptions").select("id").eq("user_id", userId).limit(5);
+    const redemptions = await blink.db.table("redemptions").list({
+      where: { userId },
+      limit: 5,
+    });
 
-    const totalActivity = (completedTasks?.length || 0) + (redemptions?.length || 0);
+    const totalActivity = completedTasks.length + redemptions.length;
     if (totalActivity < 2) return; // Not enough activity to qualify
 
     // Check IP match between referrer and referred (anti-fraud)
-    const { data: referrerRedemptions, error: refRedemptionsError } = await supabase.from("redemptions").select("ip_hash").eq("user_id", referrerId).order("redeemed_at", { ascending: false }).limit(5);
-    const { data: referredRedemptions, error: referredRedemptionsError } = await supabase.from("redemptions").select("ip_hash").eq("user_id", userId).order("redeemed_at", { ascending: false }).limit(5);
+    const referrerRedemptions = await blink.db.table("redemptions").list({
+      where: { userId: referrerId },
+      orderBy: { redeemedAt: "desc" },
+      limit: 5,
+    });
+    const referredRedemptions = await blink.db.table("redemptions").list({
+      where: { userId },
+      orderBy: { redeemedAt: "desc" },
+      limit: 5,
+    });
 
-    const referrerIPs = new Set(referrerRedemptions.map((r: any) => r.ip_hash).filter(Boolean));
-    const referredIPs = new Set(referredRedemptions.map((r: any) => r.ip_hash).filter(Boolean));
+    const referrerIPs = new Set(referrerRedemptions.map((r: any) => r.ipHash).filter(Boolean));
+    const referredIPs = new Set(referredRedemptions.map((r: any) => r.ipHash).filter(Boolean));
     const ipOverlap = [...referrerIPs].some((ip) => referredIPs.has(ip));
 
     if (ipOverlap) {
       // Flag but don't block — reduce commission
-      await supabase.from("abuse_flags").insert({
+      await blink.db.table("abuse_flags").create({
         id: `af_${Date.now()}_refip`,
-        user_id: userId,
-        flag_type: "referral_ip_match",
+        userId,
+        flagType: "referral_ip_match",
         severity: "low",
         details: JSON.stringify({ referrerId }),
       });
@@ -593,14 +635,14 @@ async function processReferralCommission(supabase: any, userId: string, earnedAm
     // Delay commission by 24 hours
     const eligibleAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
-    await supabase.from("referral_commissions").insert({
+    await blink.db.table("referral_commissions").create({
       id: `rc_${Date.now()}_${referrerId.slice(-4)}`,
-      referrer_id: referrerId,
-      referred_id: userId,
-      source_reward_id: sourceId,
-      commission_amount: commissionAmount,
+      referrerId,
+      referredId: userId,
+      sourceRewardId: sourceId,
+      commissionAmount,
       status: "pending",
-      eligible_at: eligibleAt,
+      eligibleAt,
     });
   } catch (err) {
     console.error("Referral commission error:", err);
@@ -609,27 +651,31 @@ async function processReferralCommission(supabase: any, userId: string, earnedAm
 
 // ===================== AUTO-PROCESS PENDING =====================
 
-async function autoProcessPending(supabase: any, userId: string) {
+async function autoProcessPending(blink: any, userId: string) {
   try {
     const now = new Date().toISOString();
 
     // Process pending rewards
-    const { data: pending, error: pendingError } = await supabase.from("pending_rewards").select("*").eq("user_id", userId).eq("status", "pending").limit(20);
-    if (pendingError) throw pendingError;
+    const pending = await blink.db.table("pending_rewards").list({
+      where: { userId, status: "pending" },
+      limit: 20,
+    });
 
     for (const item of pending) {
-      if (item.process_at && item.process_at <= now) {
-        await processReward(supabase, item);
+      if (item.processAt && item.processAt <= now) {
+        await processReward(blink, item);
       }
     }
 
     // Process eligible referral commissions for the referrer
-    const { data: pendingCommissions, error: commissionsError } = await supabase.from("referral_commissions").select("*").eq("referrer_id", userId).eq("status", "pending").limit(20);
-    if (commissionsError) throw commissionsError;
+    const pendingCommissions = await blink.db.table("referral_commissions").list({
+      where: { referrerId: userId, status: "pending" },
+      limit: 20,
+    });
 
     for (const comm of pendingCommissions) {
-      if (comm.eligible_at && comm.eligible_at <= now) {
-        await processCommission(supabase, comm);
+      if (comm.eligibleAt && comm.eligibleAt <= now) {
+        await processCommission(blink, comm);
       }
     }
   } catch (err) {
@@ -637,65 +683,56 @@ async function autoProcessPending(supabase: any, userId: string) {
   }
 }
 
-async function processReward(supabase: any, item: any) {
+async function processReward(blink: any, item: any) {
   try {
-    const { data: profile, error: profileError } = await supabase.from("user_profiles").select("*").eq("user_id", item.user_id).maybeSingle();
-    if (profileError || !profile) return;
+    const updatedProfile = await updateUserBalanceAndXP(blink, item.userId, {
+      balanceChange: item.rewardAmount,
+      earnedChange: item.rewardAmount,
+      xpChange: 50,
+    });
 
-    await supabase.from("user_profiles").update({
-      balance: (profile.balance || 0) + item.reward_amount,
-      total_earned: (profile.total_earned || 0) + item.reward_amount,
-      xp: (profile.xp || 0) + 10,
-    }).eq("user_id", item.user_id);
+    await blink.db.table("pending_rewards").update(item.id, { status: "processed" });
 
-    await supabase.from("pending_rewards").update({ status: "processed" }).eq("id", item.id);
-
-    await supabase.from("transactions").insert({
-      id: `tx_${Date.now()}_${item.user_id.slice(-4)}`,
-      user_id: item.user_id,
-      amount: item.reward_amount,
-      type: item.reward_type || "verification",
+    await blink.db.table("transactions").create({
+      userId: item.userId,
+      amount: item.rewardAmount,
+      type: item.rewardType || "verification",
       description: `Delayed reward processed`,
     });
 
-    await supabase.from("reward_logs").insert({
-      id: `log_${Date.now()}_${item.user_id.slice(-4)}`,
-      user_id: item.user_id,
-      reward_type: item.reward_type || "verification",
-      reward_amount: item.reward_amount,
-      source_id: item.source_id,
-      source_type: item.source_type || "pending_reward",
+    await blink.db.table("reward_logs").create({
+      userId: item.userId,
+      rewardType: item.rewardType || "verification",
+      rewardAmount: item.rewardAmount,
+      sourceId: item.sourceId,
+      sourceType: item.sourceType || "pending_reward",
     });
   } catch (err) {
     console.error(`Failed to process reward ${item.id}:`, err);
   }
 }
 
-async function processCommission(supabase: any, comm: any) {
+async function processCommission(blink: any, comm: any) {
   try {
-    const { data: referrerProfile, error: profileError } = await supabase.from("user_profiles").select("*").eq("user_id", comm.referrer_id).maybeSingle();
-    if (profileError || !referrerProfile) return;
+    const updatedProfile = await updateUserBalanceAndXP(blink, comm.referrerId, {
+      balanceChange: comm.commissionAmount,
+      earnedChange: comm.commissionAmount,
+      xpChange: 25,
+    });
 
-    await supabase.from("user_profiles").update({
-      balance: (referrerProfile.balance || 0) + comm.commission_amount,
-      total_earned: (referrerProfile.total_earned || 0) + comm.commission_amount,
-      xp: (referrerProfile.xp || 0) + 5,
-    }).eq("user_id", comm.referrer_id);
-
-    await supabase.from("referral_commissions").update({
+    await blink.db.table("referral_commissions").update(comm.id, {
       status: "processed",
-      processed_at: new Date().toISOString(),
-    }).eq("id", comm.id);
+      processedAt: new Date().toISOString(),
+    });
 
-    await supabase.from("transactions").insert({
-      id: `tx_${Date.now()}_${comm.referrer_id.slice(-4)}`,
-      user_id: comm.referrer_id,
-      amount: comm.commission_amount,
+    await blink.db.table("transactions").create({
+      userId: comm.referrerId,
+      amount: comm.commissionAmount,
       type: "referral_commission",
       description: `Referral commission from user activity`,
     });
 
-    await trackMetric(supabase, "referral", comm.commission_amount);
+    await trackMetric(blink, "referral", comm.commissionAmount);
   } catch (err) {
     console.error(`Failed to process commission ${comm.id}:`, err);
   }
@@ -703,56 +740,71 @@ async function processCommission(supabase: any, comm: any) {
 
 // ===================== REFERRAL SYSTEM =====================
 
-async function processReferral(supabase: any, newUserId: string, body: any, ipHash: string) {
+async function processReferral(blink: any, newUserId: string, body: any, ipHash: string) {
   const { referralCode } = body;
   if (!referralCode || typeof referralCode !== "string") {
     return errorResponse("Invalid referral code");
   }
 
-  const { data: referrers, error: referrersError } = await supabase.from("user_profiles").select("*").eq("referral_code", referralCode).limit(1);
-  if (referrersError || !referrers || referrers.length === 0) {
+  const referrers = await blink.db.table("user_profiles").list({
+    where: { referralCode },
+    limit: 1,
+  });
+
+  if (referrers.length === 0) {
     return errorResponse("Invalid referral code - referrer not found");
   }
 
   const referrer = referrers[0];
 
-  if (referrer.user_id === newUserId) {
+  if (referrer.userId === newUserId) {
     return errorResponse("Cannot refer yourself");
   }
 
   // Check if user was already referred
-  const { data: newUserProfiles, error: newUserError } = await supabase.from("user_profiles").select("*").eq("user_id", newUserId).limit(1);
-  if (newUserError || (newUserProfiles && newUserProfiles.length > 0 && newUserProfiles[0].referred_by)) {
+  const newUserProfiles = await blink.db.table("user_profiles").list({
+    where: { userId: newUserId },
+    limit: 1,
+  });
+  if (newUserProfiles.length > 0 && newUserProfiles[0].referredBy) {
     return errorResponse("User already has a referrer");
   }
 
   // Check duplicate
-  const { data: existingReferral, error: existingReferralError } = await supabase.from("referral_history").select("id").eq("referred_id", newUserId).limit(1);
-  if (existingReferralError || (existingReferral && existingReferral.length > 0)) {
+  const existingReferral = await blink.db.table("referral_history").list({
+    where: { referredId: newUserId },
+    limit: 1,
+  });
+  if (existingReferral.length > 0) {
     return errorResponse("Referral already processed");
   }
 
   // Anti-fraud: IP match check
-  const { data: referrerRedemptions, error: refRedemptionsError } = await supabase.from("redemptions").select("ip_hash").eq("user_id", referrer.user_id).limit(5);
-  const referrerIPs = new Set(referrerRedemptions.map((r: any) => r.ip_hash).filter(Boolean));
+  const referrerRedemptions = await blink.db.table("redemptions").list({
+    where: { userId: referrer.userId },
+    limit: 5,
+  });
+  const referrerIPs = new Set(referrerRedemptions.map((r: any) => r.ipHash).filter(Boolean));
 
   if (referrerIPs.has(ipHash)) {
-    await supabase.from("abuse_flags").insert({
+    await blink.db.table("abuse_flags").create({
       id: `af_${Date.now()}_selfref`,
-      user_id: newUserId,
-      flag_type: "referral_same_ip",
+      userId: newUserId,
+      flagType: "referral_same_ip",
       severity: "high",
-      details: JSON.stringify({ referrerId: referrer.user_id, ipHash }),
+      details: JSON.stringify({ referrerId: referrer.userId, ipHash }),
     });
     return errorResponse("Referral rejected: suspicious activity detected");
   }
 
   // Anti-fraud: cap referrals per day
   const today = new Date().toISOString().split("T")[0];
-  const { data: recentReferrals, error: recentReferralsError } = await supabase.from("referral_history").select("*").eq("referrer_id", referrer.user_id).limit(50);
-  
+  const recentReferrals = await blink.db.table("referral_history").list({
+    where: { referrerId: referrer.userId },
+    limit: 50,
+  });
   const todayReferrals = recentReferrals.filter(
-    (r: any) => r.created_at && r.created_at.startsWith(today)
+    (r: any) => r.createdAt && r.createdAt.startsWith(today)
   );
   if (todayReferrals.length >= 10) {
     return errorResponse("Referrer daily limit reached");
@@ -764,28 +816,22 @@ async function processReferral(supabase: any, newUserId: string, body: any, ipHa
 
   try {
     // 1. Create referral history (pending status)
-    await supabase.from("referral_history").insert({
-      id: `rh_${Date.now()}_${newUserId.slice(-4)}`,
-      referrer_id: referrer.user_id,
-      referred_id: newUserId,
-      reward_amount: 0, // Will be set when qualified
+    await blink.db.table("referral_history").create({
+      referrerId: referrer.userId,
+      referredId: newUserId,
+      rewardAmount: 0, // Will be set when qualified
     });
 
     // 2. Update new user: mark referred_by + grant signup bonus
-    if (newUserProfiles && newUserProfiles.length > 0) {
-      const newProfile = newUserProfiles[0];
-      await supabase.from("user_profiles").update({
-        referred_by: referrer.user_id,
-        balance: (newProfile.balance || 0) + NEW_USER_REWARD,
-        total_earned: (newProfile.total_earned || 0) + NEW_USER_REWARD,
-        xp: (newProfile.xp || 0) + 25,
-      }).eq("user_id", newUserId);
-    }
+    const updatedProfile = await updateUserBalanceAndXP(blink, newUserId, {
+      balanceChange: NEW_USER_REWARD,
+      earnedChange: NEW_USER_REWARD,
+      xpChange: 100,
+    });
 
     // 3. Log new user transaction
-    await supabase.from("transactions").insert({
-      id: `tx_${Date.now()}_${newUserId.slice(-4)}`,
-      user_id: newUserId,
+    await blink.db.table("transactions").create({
+      userId: newUserId,
       amount: NEW_USER_REWARD,
       type: "referral",
       description: `Referral bonus: joined via ${referralCode}`,
@@ -793,21 +839,24 @@ async function processReferral(supabase: any, newUserId: string, body: any, ipHa
 
     // 4. Schedule referrer reward with 24h delay
     const eligibleAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-    await supabase.from("referral_commissions").insert({
-      id: `rc_signup_${Date.now()}_${referrer.user_id.slice(-4)}`,
-      referrer_id: referrer.user_id,
-      referred_id: newUserId,
-      source_reward_id: "signup_referral",
-      commission_amount: 100, // Referrer reward
+    await blink.db.table("referral_commissions").create({
+      id: `rc_signup_${Date.now()}_${referrer.userId.slice(-4)}`,
+      referrerId: referrer.userId,
+      referredId: newUserId,
+      sourceRewardId: "signup_referral",
+      commissionAmount: 100, // Referrer reward
       status: "pending",
-      eligible_at: eligibleAt,
+      eligibleAt,
     });
 
-    await trackMetric(supabase, "referral", NEW_USER_REWARD);
+    await trackMetric(blink, "referral", NEW_USER_REWARD);
 
     return jsonResponse({
       success: true,
       newUserReward: NEW_USER_REWARD,
+      newBalance: updatedProfile?.balance,
+      newLevel: updatedProfile?.level,
+      leveledUp: updatedProfile?.leveledUp,
       message: `Referral successful! You earned ${NEW_USER_REWARD} BIX. Your referrer will be rewarded after verification.`,
     });
   } catch (err) {
@@ -818,41 +867,46 @@ async function processReferral(supabase: any, newUserId: string, body: any, ipHa
 
 // ===================== TASK SYSTEM =====================
 
-async function completeTask(supabase: any, userId: string, body: any) {
+async function completeTask(blink: any, userId: string, body: any) {
   const { taskId } = body;
   if (!taskId) return errorResponse("Missing taskId");
 
-  const { data: tasks, error: tasksError } = await supabase.from("tasks").select("*").eq("id", taskId).limit(1);
-  if (tasksError || !tasks || tasks.length === 0) return errorResponse("Task not found");
+  const tasks = await blink.db.table("tasks").list({ where: { id: taskId }, limit: 1 });
+  if (tasks.length === 0) return errorResponse("Task not found");
 
   const task = tasks[0];
-  if (!task.is_active) return errorResponse("Task is no longer active");
+  if (!task.isActive) return errorResponse("Task is no longer active");
 
-  const { data: profiles, error: profileError } = await supabase.from("user_profiles").select("*").eq("user_id", userId).limit(1);
-  if (profileError || !profiles || profiles.length === 0) return errorResponse("Profile not found");
+  const profiles = await blink.db.table("user_profiles").list({ where: { userId }, limit: 1 });
+  if (profiles.length === 0) return errorResponse("Profile not found");
   const profile = profiles[0];
 
-  const userLevel = Math.floor((profile.total_earned || 0) / 500) + 1;
-  if (task.required_level && userLevel < task.required_level) {
-    return errorResponse(`Requires Level ${task.required_level}`);
+  const userLevel = profile.level || Math.floor((profile.xp || 0) / 1000000) + 1;
+  if (task.requiredLevel && userLevel < task.requiredLevel) {
+    return errorResponse(`Requires Level ${task.requiredLevel}`);
   }
 
-  const { data: existingCompletions, error: completionsError } = await supabase.from("user_tasks").select("*").eq("user_id", userId).eq("task_id", taskId).limit(10);
+  const existingCompletions = await blink.db.table("user_tasks").list({
+    where: { userId, taskId },
+    limit: 10,
+  });
 
-  if (task.task_type === "one_time" && existingCompletions && existingCompletions.length > 0) {
+  if (task.taskType === "one_time" && existingCompletions.length > 0) {
     return errorResponse("Task already completed");
   }
 
-  if (task.task_type === "daily") {
+  if (task.taskType === "daily") {
     const today = new Date().toISOString().split("T")[0];
     const completedToday = existingCompletions.some(
-      (c: any) => c.completed_at && c.completed_at.startsWith(today)
+      (c: any) => c.completedAt && c.completedAt.startsWith(today)
     );
     if (completedToday) return errorResponse("Daily task already completed today");
   }
 
   if (task.category === "referral") {
-    const { count: referralCount, error: referralCountError } = await supabase.from("referral_history").count({ exact: true }).eq("referrer_id", userId);
+    const referralCount = await blink.db.table("referral_history").count({
+      where: { referrerId: userId },
+    });
     const requiredCount = taskId === "task_refer_1" ? 1 : taskId === "task_refer_5" ? 5 : 25;
     if (referralCount < requiredCount) {
       return errorResponse(`Need ${requiredCount} referrals to claim`);
@@ -860,58 +914,57 @@ async function completeTask(supabase: any, userId: string, body: any) {
   }
 
   if (task.category === "milestone") {
-    if (taskId === "task_earn_1000" && (profile.total_earned || 0) < 1000)
+    if (taskId === "task_earn_1000" && (profile.totalEarned || 0) < 1000)
       return errorResponse("Need 1,000 BIX total earnings");
-    if (taskId === "task_earn_10000" && (profile.total_earned || 0) < 10000)
+    if (taskId === "task_earn_10000" && (profile.totalEarned || 0) < 10000)
       return errorResponse("Need 10,000 BIX total earnings");
-    if (taskId === "task_streak_7" && (profile.daily_streak || 0) < 7)
+    if (taskId === "task_streak_7" && (profile.dailyStreak || 0) < 7)
       return errorResponse("Need 7-day login streak");
   }
 
-  const reward = task.reward_amount || 0;
-  const xpReward = task.xp_reward || 0;
+  const reward = task.rewardAmount || 0;
+  const xpReward = task.xpReward || 100;
 
   try {
-    await supabase.from("user_tasks").insert({
-      id: `ut_${Date.now()}_${userId.slice(-4)}`,
-      user_id: userId,
-      task_id: taskId,
+    await blink.db.table("user_tasks").create({
+      userId,
+      taskId,
       status: "completed",
-      completed_at: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
     });
 
-    await supabase.from("user_profiles").update({
-      balance: (profile.balance || 0) + reward,
-      total_earned: (profile.total_earned || 0) + reward,
-      xp: (profile.xp || 0) + xpReward,
-    }).eq("user_id", userId);
+    const updatedProfile = await updateUserBalanceAndXP(blink, userId, {
+      balanceChange: reward,
+      earnedChange: reward,
+      xpChange: xpReward,
+    });
 
-    await supabase.from("transactions").insert({
-      id: `tx_${Date.now()}_${userId.slice(-4)}`,
-      user_id: userId,
+    await blink.db.table("transactions").create({
+      userId,
       amount: reward,
       type: "task",
       description: `Completed: ${task.title}`,
     });
 
-    await supabase.from("reward_logs").insert({
-      id: `log_${Date.now()}_${userId.slice(-4)}`,
-      user_id: userId,
-      reward_type: "task",
-      reward_amount: reward,
-      source_id: taskId,
-      source_type: task.category,
+    await blink.db.table("reward_logs").create({
+      userId,
+      rewardType: "task",
+      rewardAmount: reward,
+      sourceId: taskId,
+      sourceType: task.category,
     });
 
-    await trackMetric(supabase, "task", reward);
-    await processReferralCommission(supabase, userId, reward, taskId);
+    await trackMetric(blink, "task", reward);
+    await processReferralCommission(blink, userId, reward, taskId);
 
     return jsonResponse({
       success: true,
       reward,
       xp: xpReward,
-      newBalance: (profile.balance || 0) + reward,
-      message: `+${reward} BIX earned!`,
+      newBalance: updatedProfile?.balance,
+      newLevel: updatedProfile?.level,
+      leveledUp: updatedProfile?.leveledUp,
+      message: `+${reward} BIX earned!${updatedProfile?.leveledUp ? " LEVEL UP!" : ""}`,
     });
   } catch (err) {
     console.error("Task completion error:", err);
@@ -921,14 +974,14 @@ async function completeTask(supabase: any, userId: string, body: any) {
 
 // ===================== DAILY CHECK-IN =====================
 
-async function dailyCheckin(supabase: any, userId: string) {
-  const { data: profiles, error } = await supabase.from("user_profiles").select("*").eq("user_id", userId).limit(1);
-  if (error || !profiles || profiles.length === 0) return errorResponse("Profile not found");
+async function dailyCheckin(blink: any, userId: string) {
+  const profiles = await blink.db.table("user_profiles").list({ where: { userId }, limit: 1 });
+  if (profiles.length === 0) return errorResponse("Profile not found");
 
   const profile = profiles[0];
   const today = new Date().toISOString().split("T")[0];
 
-  if (profile.last_login === today) {
+  if (profile.lastLogin === today) {
     return errorResponse("Already checked in today");
   }
 
@@ -937,27 +990,29 @@ async function dailyCheckin(supabase: any, userId: string) {
   const yesterdayStr = yesterday.toISOString().split("T")[0];
 
   let newStreak = 1;
-  if (profile.last_login === yesterdayStr) {
-    newStreak = (profile.daily_streak || 0) + 1;
+  if (profile.lastLogin === yesterdayStr) {
+    newStreak = (profile.dailyStreak || 0) + 1;
   }
 
   const multiplier = Math.min(1 + (newStreak - 1) * 0.5, 5);
   const baseReward = 10;
   const reward = Math.round(baseReward * multiplier);
-  const xpReward = 5 + newStreak;
+  const xpReward = 50 + (newStreak * 10);
 
   try {
-    await supabase.from("user_profiles").update({
-      balance: (profile.balance || 0) + reward,
-      total_earned: (profile.total_earned || 0) + reward,
-      last_login: today,
-      daily_streak: newStreak,
-      xp: (profile.xp || 0) + xpReward,
-    }).eq("user_id", userId);
+    const updatedProfile = await updateUserBalanceAndXP(blink, userId, {
+      balanceChange: reward,
+      earnedChange: reward,
+      xpChange: xpReward,
+    });
 
-    await supabase.from("transactions").insert({
-      id: `tx_${Date.now()}_${userId.slice(-4)}`,
-      user_id: userId,
+    await blink.db.table("user_profiles").update(userId, {
+      lastLogin: today,
+      dailyStreak: newStreak,
+    });
+
+    await blink.db.table("transactions").create({
+      userId,
       amount: reward,
       type: "daily",
       description: `Daily check-in (${newStreak}-day streak, ${multiplier}x multiplier)`,
@@ -965,16 +1020,17 @@ async function dailyCheckin(supabase: any, userId: string) {
 
     // Track active user
     const metricDate = today;
-    const { data: existingMetrics, error: metricsError } = await supabase.from("platform_metrics").select("*").eq("metric_date", metricDate).limit(1);
-    if (metricsError) throw metricsError;
-
-    if (existingMetrics && existingMetrics.length > 0) {
-      await supabase.from("platform_metrics").update({
-        active_users_today: (existingMetrics[0].active_users_today || 0) + 1,
-      }).eq("id", existingMetrics[0].id);
+    const existing = await blink.db.table("platform_metrics").list({
+      where: { metricDate },
+      limit: 1,
+    });
+    if (existing.length > 0) {
+      await blink.db.table("platform_metrics").update(existing[0].id, {
+        activeUsersToday: (existing[0].activeUsersToday || 0) + 1,
+      });
     }
 
-    await trackMetric(supabase, "daily", reward);
+    await trackMetric(blink, "daily", reward);
 
     return jsonResponse({
       success: true,
@@ -982,6 +1038,9 @@ async function dailyCheckin(supabase: any, userId: string) {
       streak: newStreak,
       multiplier,
       xp: xpReward,
+      newBalance: updatedProfile?.balance,
+      newLevel: updatedProfile?.level,
+      leveledUp: updatedProfile?.leveledUp,
       message: `+${reward} BIX! ${newStreak}-day streak (${multiplier}x)`,
     });
   } catch (err) {
@@ -992,35 +1051,36 @@ async function dailyCheckin(supabase: any, userId: string) {
 
 // ===================== QUIZ SYSTEM =====================
 
-async function startQuiz(supabase: any, userId: string, body: any) {
+async function startQuiz(blink: any, userId: string, body: any) {
   const { questionCount = 10, difficulty = "easy" } = body;
   const validCounts = [5, 10, 20, 50];
   if (!validCounts.includes(questionCount)) {
     return errorResponse("Invalid question count. Choose 5, 10, 20, or 50");
   }
 
-  const { data: activeSessions, error: sessionError } = await supabase.from("quiz_sessions").select("*").eq("user_id", userId).eq("status", "active").limit(1);
-  if (sessionError) throw sessionError;
-
-  if (activeSessions && activeSessions.length > 0) {
+  const activeSessions = await blink.db.table("quiz_sessions").list({
+    where: { userId, status: "active" },
+    limit: 1,
+  });
+  if (activeSessions.length > 0) {
     const session = activeSessions[0];
-    const startedAt = new Date(session.started_at).getTime();
+    const startedAt = new Date(session.startedAt).getTime();
     if (Date.now() - startedAt > 30 * 60 * 1000) {
-      await supabase.from("quiz_sessions").update({ status: "expired" }).eq("id", session.id);
+      await blink.db.table("quiz_sessions").update(session.id, { status: "expired" });
     } else {
       return errorResponse("You already have an active quiz session");
     }
   }
 
-  const { data: allQuestions, error: questionsError } = await supabase.from("quizzes").select("*").eq("difficulty", difficulty).limit(200);
-  if (questionsError) throw questionsError;
+  const allQuestions = await blink.db.table("quizzes").list({
+    where: { difficulty },
+    limit: 200,
+  });
 
   let questions = allQuestions;
   let actualDifficulty = difficulty;
   if (allQuestions.length < questionCount) {
-    const { data: mixedQuestions, error: mixedError } = await supabase.from("quizzes").select("*").limit(200);
-    if (mixedError) throw mixedError;
-    questions = mixedQuestions;
+    questions = await blink.db.table("quizzes").list({ limit: 200 });
     actualDifficulty = "mixed";
     if (questions.length < questionCount) {
       return errorResponse("Not enough questions available");
@@ -1032,13 +1092,13 @@ async function startQuiz(supabase: any, userId: string, body: any) {
   const questionIds = selected.map((q: any) => q.id);
 
   const sessionId = `qs_${userId.slice(-6)}_${Date.now()}`;
-  await supabase.from("quiz_sessions").insert({
+  await blink.db.table("quiz_sessions").create({
     id: sessionId,
-    user_id: userId,
-    question_count: questionCount,
+    userId,
+    questionCount,
     difficulty: actualDifficulty,
-    question_ids: JSON.stringify(questionIds),
-    answered_ids: "[]",
+    questionIds: JSON.stringify(questionIds),
+    answeredIds: "[]",
     status: "active",
   });
 
@@ -1049,14 +1109,14 @@ async function startQuiz(supabase: any, userId: string, body: any) {
       id: q.id,
       question: q.question,
       options: q.options,
-      reward_amount: q.reward_amount,
+      rewardAmount: q.rewardAmount,
       difficulty: q.difficulty,
     })),
     totalQuestions: questionCount,
   });
 }
 
-async function quizAnswer(supabase: any, userId: string, body: any) {
+async function quizAnswer(blink: any, userId: string, body: any) {
   const { sessionId, questionId, selectedOption, timeTaken } = body;
   if (!sessionId || !questionId || selectedOption === undefined) {
     return errorResponse("Missing required fields");
@@ -1065,37 +1125,40 @@ async function quizAnswer(supabase: any, userId: string, body: any) {
     return errorResponse("Answer too fast - suspicious activity");
   }
 
-  const { data: sessions, error: sessionError } = await supabase.from("quiz_sessions").select("*").eq("id", sessionId).eq("user_id", userId).eq("status", "active").limit(1);
-  if (sessionError || !sessions || sessions.length === 0) return errorResponse("Invalid or expired session");
+  const sessions = await blink.db.table("quiz_sessions").list({
+    where: { id: sessionId, userId, status: "active" },
+    limit: 1,
+  });
+  if (sessions.length === 0) return errorResponse("Invalid or expired session");
 
   const session = sessions[0];
-  const questionIds = JSON.parse(session.question_ids);
-  const answeredIds = JSON.parse(session.answered_ids || "[]");
+  const questionIds = JSON.parse(session.questionIds);
+  const answeredIds = JSON.parse(session.answeredIds || "[]");
 
   if (!questionIds.includes(questionId)) return errorResponse("Question not in this session");
   if (answeredIds.includes(questionId)) return errorResponse("Question already answered");
 
-  const { data: questions, error: questionError } = await supabase.from("quizzes").select("*").eq("id", questionId).limit(1);
-  if (questionError || !questions || questions.length === 0) return errorResponse("Question not found");
+  const questions = await blink.db.table("quizzes").list({ where: { id: questionId }, limit: 1 });
+  if (questions.length === 0) return errorResponse("Question not found");
 
   const question = questions[0];
-  const isCorrect = Number(selectedOption) === Number(question.correct_option);
+  const isCorrect = Number(selectedOption) === Number(question.correctOption);
 
   answeredIds.push(questionId);
   const newScore = (session.score || 0) + (isCorrect ? 1 : 0);
-  const earnedForThis = isCorrect ? question.reward_amount : 0;
-  const newTotalEarned = (session.total_earned || 0) + earnedForThis;
+  const earnedForThis = isCorrect ? question.rewardAmount : 0;
+  const newTotalEarned = (session.totalEarned || 0) + earnedForThis;
 
-  await supabase.from("quiz_sessions").update({
-    answered_ids: JSON.stringify(answeredIds),
+  await blink.db.table("quiz_sessions").update(sessionId, {
+    answeredIds: JSON.stringify(answeredIds),
     score: newScore,
-    total_earned: newTotalEarned,
-  }).eq("id", sessionId);
+    totalEarned: newTotalEarned,
+  });
 
   return jsonResponse({
     success: true,
     isCorrect,
-    correctOption: question.correct_option,
+    correctOption: question.correctOption,
     earned: earnedForThis,
     sessionScore: newScore,
     sessionEarned: newTotalEarned,
@@ -1104,22 +1167,25 @@ async function quizAnswer(supabase: any, userId: string, body: any) {
   });
 }
 
-async function finishQuiz(supabase: any, userId: string, body: any) {
+async function finishQuiz(blink: any, userId: string, body: any) {
   const { sessionId } = body;
   if (!sessionId) return errorResponse("Missing sessionId");
 
-  const { data: sessions, error: sessionError } = await supabase.from("quiz_sessions").select("*").eq("id", sessionId).eq("user_id", userId).eq("status", "active").limit(1);
-  if (sessionError || !sessions || sessions.length === 0) return errorResponse("Invalid or expired session");
+  const sessions = await blink.db.table("quiz_sessions").list({
+    where: { id: sessionId, userId, status: "active" },
+    limit: 1,
+  });
+  if (sessions.length === 0) return errorResponse("Invalid or expired session");
 
   const session = sessions[0];
-  const questionIds = JSON.parse(session.question_ids);
-  const answeredIds = JSON.parse(session.answered_ids || "[]");
+  const questionIds = JSON.parse(session.questionIds);
+  const answeredIds = JSON.parse(session.answeredIds || "[]");
 
   if (answeredIds.length < questionIds.length) {
     return errorResponse(`Answer all questions first (${answeredIds.length}/${questionIds.length})`);
   }
 
-  let totalReward = session.total_earned || 0;
+  let totalReward = session.totalEarned || 0;
   let bonusReward = 0;
   const score = session.score || 0;
 
@@ -1128,43 +1194,37 @@ async function finishQuiz(supabase: any, userId: string, body: any) {
     totalReward += bonusReward;
   }
 
-  const xpReward = score * 5 + (bonusReward > 0 ? 50 : 0);
+  const xpReward = score * 10 + (bonusReward > 0 ? 500 : 0);
 
-  await supabase.from("quiz_sessions").update({
+  await blink.db.table("quiz_sessions").update(sessionId, {
     status: "completed",
-    completed_at: new Date().toISOString(),
-    total_earned: totalReward,
-  }).eq("id", sessionId);
+    completedAt: new Date().toISOString(),
+    totalEarned: totalReward,
+  });
 
-  const { data: profiles, error: profileError } = await supabase.from("user_profiles").select("*").eq("user_id", userId).limit(1);
-  if (!profileError && profiles && profiles.length > 0) {
-    const profile = profiles[0];
-    await supabase.from("user_profiles").update({
-      balance: (profile.balance || 0) + totalReward,
-      total_earned: (profile.total_earned || 0) + totalReward,
-      xp: (profile.xp || 0) + xpReward,
-    }).eq("user_id", userId);
-  }
+  const updatedProfile = await updateUserBalanceAndXP(blink, userId, {
+    balanceChange: totalReward,
+    earnedChange: totalReward,
+    xpChange: xpReward,
+  });
 
-  await supabase.from("transactions").insert({
-    id: `tx_${Date.now()}_${userId.slice(-4)}`,
-    user_id: userId,
+  await blink.db.table("transactions").create({
+    userId,
     amount: totalReward,
     type: "quiz",
     description: `Quiz completed: ${score}/${questionIds.length} correct${bonusReward > 0 ? " (PERFECT!)" : ""}`,
   });
 
-  await supabase.from("reward_logs").insert({
-    id: `log_${Date.now()}_${userId.slice(-4)}`,
-    user_id: userId,
-    reward_type: "quiz",
-    reward_amount: totalReward,
-    source_id: sessionId,
-    source_type: "quiz_session",
+  await blink.db.table("reward_logs").create({
+    userId,
+    rewardType: "quiz",
+    rewardAmount: totalReward,
+    sourceId: sessionId,
+    sourceType: "quiz_session",
   });
 
-  await trackMetric(supabase, "quiz", totalReward);
-  await processReferralCommission(supabase, userId, totalReward, sessionId);
+  await trackMetric(blink, "quiz", totalReward);
+  await processReferralCommission(blink, userId, totalReward, sessionId);
 
   return jsonResponse({
     success: true,
@@ -1173,6 +1233,9 @@ async function finishQuiz(supabase: any, userId: string, body: any) {
     totalReward,
     bonusReward,
     xp: xpReward,
+    newBalance: updatedProfile?.balance,
+    newLevel: updatedProfile?.level,
+    leveledUp: updatedProfile?.leveledUp,
     isPerfect: score === questionIds.length,
     message: `Quiz complete! ${score}/${questionIds.length} correct. +${totalReward} BIX!`,
   });
@@ -1180,13 +1243,13 @@ async function finishQuiz(supabase: any, userId: string, body: any) {
 
 // ===================== GAME RESULT =====================
 
-async function gameResult(supabase: any, userId: string, body: any) {
+async function gameResult(blink: any, userId: string, body: any) {
   const { gameType, betAmount } = body;
   if (!gameType || !betAmount) return errorResponse("Missing game parameters");
   if (betAmount < 10 || betAmount > 1000) return errorResponse("Bet must be between 10-1000 BIX");
 
-  const { data: profiles, error } = await supabase.from("user_profiles").select("*").eq("user_id", userId).limit(1);
-  if (error || !profiles || profiles.length === 0) return errorResponse("Profile not found");
+  const profiles = await blink.db.table("user_profiles").list({ where: { userId }, limit: 1 });
+  if (profiles.length === 0) return errorResponse("Profile not found");
 
   const profile = profiles[0];
   if ((profile.balance || 0) < betAmount) return errorResponse("Insufficient balance");
@@ -1205,19 +1268,28 @@ async function gameResult(supabase: any, userId: string, body: any) {
 
   const netChange = (betAmount * multiplier) - betAmount;
 
-  await supabase.from("user_profiles").update({
-    balance: (profile.balance || 0) + netChange,
-  }).eq("user_id", userId);
+  // Add XP and track total earned only if they WON
+  if (netChange > 0) {
+    await updateUserBalanceAndXP(blink, userId, {
+      balanceChange: netChange,
+      earnedChange: netChange,
+      xpChange: Math.round(netChange / 10), // 1 XP for every 10 BIX won
+    });
+  } else {
+    // If they lost, only deduct balance
+    await blink.db.table("user_profiles").update(userId, {
+      balance: (profile.balance || 0) + netChange,
+    });
+  }
 
-  await supabase.from("transactions").insert({
-    id: `tx_${Date.now()}_${userId.slice(-4)}`,
-    user_id: userId,
+  await blink.db.table("transactions").create({
+    userId,
     amount: netChange,
     type: "game",
     description: `${gameType} ${multiplier > 0 ? "WIN" : "LOSS"} (${multiplier}x)`,
   });
 
-  await trackMetric(supabase, "game", netChange > 0 ? netChange : 0);
+  await trackMetric(blink, "game", netChange > 0 ? netChange : 0);
 
   return jsonResponse({
     success: true,
@@ -1230,29 +1302,31 @@ async function gameResult(supabase: any, userId: string, body: any) {
 
 // ===================== PENDING REWARDS =====================
 
-async function getPendingRewards(supabase: any, userId: string) {
-  const { data: pending, error } = await supabase.from("pending_rewards").select("*").eq("user_id", userId).order("created_at", { ascending: false }).limit(20);
-  if (error) throw error;
+async function getPendingRewards(blink: any, userId: string) {
+  const pending = await blink.db.table("pending_rewards").list({
+    where: { userId },
+    orderBy: { createdAt: "desc" },
+    limit: 20,
+  });
 
   return jsonResponse({ success: true, pending });
 }
 
 // ===================== ADMIN METRICS =====================
 
-async function adminGetMetrics(supabase: any, userId: string) {
-  if (!(await verifyAdmin(supabase, userId))) {
+async function adminGetMetrics(blink: any, userId: string) {
+  if (!(await verifyAdmin(blink, userId))) {
     return errorResponse("Admin access required", 403);
   }
 
-  const { data: metrics, error: metricsError } = await supabase.from("platform_metrics").select("*").order("metric_date", { ascending: false }).limit(30);
-  if (metricsError) throw metricsError;
+  const metrics = await blink.db.table("platform_metrics").list({
+    orderBy: { metricDate: "desc" },
+    limit: 30,
+  });
 
   // Get total users count
-  const { count: totalUsers, error: totalUsersError } = await supabase.from("user_profiles").count({ exact: true });
-  if (totalUsersError) throw totalUsersError;
-
-  const { count: flaggedCount, error: flaggedCountError } = await supabase.from("abuse_flags").count({ exact: true }).eq("resolved", 0);
-  if (flaggedCountError) throw flaggedCountError;
+  const totalUsers = await blink.db.table("user_profiles").count({});
+  const flaggedCount = await blink.db.table("abuse_flags").count({ where: { resolved: 0 } });
 
   return jsonResponse({
     success: true,
@@ -1262,32 +1336,32 @@ async function adminGetMetrics(supabase: any, userId: string) {
   });
 }
 
-async function adminGetAbuseFlags(supabase: any, userId: string) {
-  if (!(await verifyAdmin(supabase, userId))) {
+async function adminGetAbuseFlags(blink: any, userId: string) {
+  if (!(await verifyAdmin(blink, userId))) {
     return errorResponse("Admin access required", 403);
   }
 
-  const { data: flags, error } = await supabase.from("abuse_flags").select("*").order("created_at", { ascending: false }).limit(50);
-  if (error) throw error;
+  const flags = await blink.db.table("abuse_flags").list({
+    orderBy: { createdAt: "desc" },
+    limit: 50,
+  });
 
   return jsonResponse({ success: true, flags });
 }
 
-async function adminResolveFlag(supabase: any, userId: string, body: any) {
-  if (!(await verifyAdmin(supabase, userId))) {
+async function adminResolveFlag(blink: any, userId: string, body: any) {
+  if (!(await verifyAdmin(blink, userId))) {
     return errorResponse("Admin access required", 403);
   }
 
   const { flagId } = body;
   if (!flagId) return errorResponse("Missing flagId");
 
-  const { error } = await supabase.from("abuse_flags").update({
+  await blink.db.table("abuse_flags").update(flagId, {
     resolved: 1,
-    resolved_by: userId,
-    resolved_at: new Date().toISOString(),
-  }).eq("id", flagId);
-
-  if (error) return errorResponse("Failed to resolve flag");
+    resolvedBy: userId,
+    resolvedAt: new Date().toISOString(),
+  });
 
   return jsonResponse({ success: true, message: "Flag resolved" });
 }

@@ -19,7 +19,7 @@ export function AppSidebar({ activePath }: { activePath: string }) {
   const { logout, user, profile } = useAuth();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
 
-  const isAdmin = profile?.role === 'admin' || user?.email === 'bixgain@gmail.com'; // Placeholder for admin logic
+  const isAdmin = profile?.role === 'admin' || user?.email === 'bixgain@gmail.com';
 
   return (
     <>
