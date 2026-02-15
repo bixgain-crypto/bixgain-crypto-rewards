@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { supabase } from '../lib/supabase';
 import { blink } from '../lib/blink';
 import { useAuth } from '../hooks/use-auth';
 import { fetchSharedData } from '../lib/shared-data';
@@ -48,13 +49,13 @@ export default function QuestsPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [taskList, userTasks, pendingRes] = await Promise.all([
+        const [taskList, userTasksRes, pendingRes] = await Promise.all([
           fetchSharedData('tasks'),
-          user ? blink.db.table('user_tasks').list({ where: { userId: user.id, status: 'completed' } }) : Promise.resolve([]),
+          user ? supabase.from('user_tasks').select('*').eq('user_id', user.id).eq('status', 'completed') : Promise.resolve({ data: [] }),
           user ? rewardEngine.getPendingRewards() : Promise.resolve({ pending: [] })
         ]);
         setTasks(taskList);
-        setCompletedTaskIds(new Set(userTasks.map((ut: any) => ut.taskId)));
+        setCompletedTaskIds(new Set((userTasksRes.data || []).map((ut: any) => ut.task_id)));
         setPendingRewards(pendingRes.pending || []);
       } catch (err) {
         console.error('Error fetching quests:', err);
@@ -353,7 +354,7 @@ export default function QuestsPage() {
                   pendingRewards.map((pr) => (
                     <div key={pr.id} className="p-3 rounded-lg bg-background/40 border border-white/5 flex items-center justify-between">
                       <div>
-                        <p className="text-sm font-bold text-primary">+{pr.rewardAmount} BIX</p>
+                        <p className="text-sm font-bold text-primary">+{pr.reward_amount} BIX</p>
                         <p className="text-[10px] text-muted-foreground">
                           {pr.status === 'pending' ? 'Unlocks in 30 mins' : 'Processed'}
                         </p>

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { blink } from '../lib/blink';
+import { supabase } from '../lib/supabase';
+import { supabaseSync } from '../lib/supabase-sync';
 import { useAuth } from '../hooks/use-auth';
 import { fetchSharedData } from '../lib/shared-data';
 import { DashboardLayout } from '../components/dashboard-layout';
@@ -36,12 +37,15 @@ export default function StorePage() {
     }
 
     try {
-      await blink.db.table('user_profiles').update(user.id, {
+      const { error: updateError } = await supabase.from('user_profiles').update({
         balance: profile.balance - item.price,
-      });
+      }).eq('user_id', user.id);
 
-      await blink.db.table('transactions').create({
-        userId: user.id,
+      if (updateError) throw updateError;
+
+      await supabaseSync.insert('transactions', {
+        id: `tx_store_${Date.now()}_${user.id.slice(-4)}`,
+        user_id: user.id,
         amount: -item.price,
         type: 'spend',
         description: `Purchased ${item.name} from Store`,
@@ -50,6 +54,7 @@ export default function StorePage() {
       toast.success(`Successfully purchased ${item.name}!`);
       refreshProfile();
     } catch (err) {
+      console.error('Purchase error:', err);
       toast.error('Purchase failed.');
     }
   };
@@ -75,7 +80,7 @@ export default function StorePage() {
             <Card key={item.id} className="glass-card overflow-hidden group hover:border-primary/30 transition-all flex flex-col">
               <div className="aspect-square relative overflow-hidden">
                 <img 
-                  src={item.imageUrl} 
+                  src={item.image_url} 
                   alt={item.name}
                   className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" 
                 />

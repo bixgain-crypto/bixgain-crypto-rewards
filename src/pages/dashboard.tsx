@@ -64,8 +64,8 @@ export default function DashboardPage() {
             <Zap className="h-4 w-4 text-orange-400" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">{profile?.dailyStreak || 0} Days</div>
-            <Progress value={((profile?.dailyStreak || 0) % 7) * 14.2} className="h-2 mt-3" />
+            <div className="text-3xl font-bold">{profile?.daily_streak || 0} Days</div>
+            <Progress value={((profile?.daily_streak || 0) % 7) * 14.2} className="h-2 mt-3" />
           </CardContent>
         </Card>
 
@@ -75,7 +75,7 @@ export default function DashboardPage() {
             <Trophy className="h-4 w-4 text-yellow-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">Lvl {Math.floor((profile?.totalEarned || 0) / 500) + 1}</div>
+            <div className="text-3xl font-bold">Lvl {Math.floor((profile?.total_earned || 0) / 500) + 1}</div>
             <p className="text-xs text-muted-foreground mt-1">{profile?.xp || 0} XP earned</p>
           </CardContent>
         </Card>
@@ -86,7 +86,7 @@ export default function DashboardPage() {
             <TrendingUp className="h-4 w-4 text-green-400" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">{profile?.totalEarned?.toLocaleString() || 0}</div>
+            <div className="text-3xl font-bold">{profile?.total_earned?.toLocaleString() || 0}</div>
             <p className="text-xs text-muted-foreground mt-1">Lifetime Earnings</p>
           </CardContent>
         </Card>
@@ -116,7 +116,7 @@ export default function DashboardPage() {
                   </div>
                   <div className="flex items-center gap-4">
                     <div className="text-right">
-                      <p className="font-bold text-primary">+{task.rewardAmount} BIX</p>
+                      <p className="font-bold text-primary">+{task.reward_amount} BIX</p>
                       <p className="text-xs text-muted-foreground flex items-center gap-1 justify-end"><Clock className="h-3 w-3" /> 2m</p>
                     </div>
                     <Button 
@@ -145,7 +145,7 @@ export default function DashboardPage() {
                   onClick={handleDailyCheckin}
                   disabled={checkinLoading}
                 >
-                  {checkinLoading ? 'Claiming...' : `Claim ${profile?.dailyStreak ? Math.round(10 * Math.min(1 + ((profile.dailyStreak || 0)) * 0.5, 5)) : 10} BIX`}
+                  {checkinLoading ? 'Claiming...' : `Claim ${profile?.daily_streak ? Math.round(10 * Math.min(1 + ((profile.daily_streak || 0)) * 0.5, 5)) : 10} BIX`}
                 </Button>
               </div>
               <Coins className="absolute -bottom-4 -right-4 h-32 w-32 text-white/10 rotate-12 group-hover:rotate-45 transition-transform duration-700" />

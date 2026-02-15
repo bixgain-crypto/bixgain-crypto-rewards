@@ -1,4 +1,5 @@
-import { createClient } from "npm:@blinkdotnew/sdk";
+import { createClient as createBlinkClient } from "npm:@blinkdotnew/sdk";
+import { createClient as createSupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -14,15 +15,17 @@ async function handler(req: Request): Promise<Response> {
   try {
     const projectId = Deno.env.get("BLINK_PROJECT_ID");
     const secretKey = Deno.env.get("BLINK_SECRET_KEY");
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-    if (!projectId || !secretKey) {
+    if (!projectId || !secretKey || !supabaseUrl || !supabaseServiceKey) {
       return new Response(
         JSON.stringify({ error: "Missing config" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    const blink = createClient({ projectId, secretKey });
+    const supabase = createSupabaseClient(supabaseUrl, supabaseServiceKey);
 
     const url = new URL(req.url);
     const table = url.searchParams.get("table");
@@ -35,30 +38,40 @@ async function handler(req: Request): Promise<Response> {
       );
     }
 
-    const options: Record<string, unknown> = {};
-    if (limitParam) options.limit = parseInt(limitParam, 10);
+    const limit = limitParam ? parseInt(limitParam, 10) : null;
+
+    let query = supabase.from(table).select("*");
 
     // For user_profiles, sort by balance descending for leaderboard
     if (table === "user_profiles") {
-      options.orderBy = { balance: "desc" };
-      if (!limitParam) options.limit = 50;
+      query = query.order("balance", { ascending: false });
+      if (!limit) query = query.limit(50);
     }
-    // For referral_history, sort by createdAt descending
+    // For referral_history, sort by created_at descending
     if (table === "referral_history") {
-      options.orderBy = { createdAt: "desc" };
-      if (!limitParam) options.limit = 20;
+      query = query.order("created_at", { ascending: false });
+      if (!limit) query = query.limit(20);
     }
     // Only show active tasks
     if (table === "tasks") {
-      options.where = { isActive: 1 };
+      query = query.eq("is_active", 1);
     }
     // Platform metrics sorted by date desc
     if (table === "platform_metrics") {
-      options.orderBy = { metricDate: "desc" };
-      if (!limitParam) options.limit = 30;
+      query = query.order("metric_date", { ascending: false });
+      if (!limit) query = query.limit(30);
     }
 
-    const data = await blink.db.table(table).list(options);
+    if (limit) {
+      query = query.limit(limit);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error("Supabase error:", error);
+      throw error;
+    }
 
     return new Response(JSON.stringify({ data }), {
       status: 200,

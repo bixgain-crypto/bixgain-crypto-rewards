@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { blink } from '../lib/blink';
+import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/use-auth';
 import { DashboardLayout } from '../components/dashboard-layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
@@ -20,13 +20,11 @@ export default function ReferralsPage() {
       if (!user) return;
       try {
         // Use user's own referral history (RLS filters to their records)
-        const history = await blink.db.table('referral_history').list({
-          where: { referrerId: user.id },
-          orderBy: { createdAt: 'desc' },
-          limit: 20,
-        });
-        setReferralHistory(history);
-        setReferralCount(history.length);
+        const { data: history, error } = await supabase.from('referral_history').select('*').eq('referrer_id', user.id).order('created_at', { ascending: false }).limit(20);
+        if (!error && history) {
+          setReferralHistory(history);
+          setReferralCount(history.length);
+        }
       } catch {
         // referral_history may be empty
       }
@@ -34,7 +32,7 @@ export default function ReferralsPage() {
     fetchReferrals();
   }, [user]);
 
-  const referralCode = profile?.referralCode || 'BIX-XXXXXX';
+  const referralCode = profile?.referral_code || 'BIX-XXXXXX';
   const referralLink = `${window.location.origin}?ref=${referralCode}`;
 
   const copyToClipboard = () => {
@@ -159,12 +157,12 @@ export default function ReferralsPage() {
                           M{i + 1}
                         </div>
                         <div>
-                          <p className="font-bold">Miner #{(ref.referredId || '').slice(-6)}</p>
-                          <p className="text-xs text-muted-foreground">{ref.createdAt ? new Date(ref.createdAt).toLocaleDateString() : 'Recently'}</p>
+                          <p className="font-bold">Miner #{(ref.referred_id || '').slice(-6)}</p>
+                          <p className="text-xs text-muted-foreground">{ref.created_at ? new Date(ref.created_at).toLocaleDateString() : 'Recently'}</p>
                         </div>
                       </div>
                       <div className="text-right">
-                        <p className="text-green-400 font-bold">+{ref.rewardAmount || 100} BIX</p>
+                        <p className="text-green-400 font-bold">+{ref.reward_amount || 100} BIX</p>
                         <Badge variant="outline" className="text-[10px] text-muted-foreground">Referral Bonus</Badge>
                       </div>
                     </div>
